@@ -55,3 +55,5 @@ Thumbs.db
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb_checkpoints
+examples/use_cases/_build_notebooks.py
+examples/use_cases/_generate_data.py
