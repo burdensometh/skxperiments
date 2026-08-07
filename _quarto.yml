@@ -20,7 +20,6 @@ website:
     location: navbar
     type: overlay
   navbar:
-    logo: null
     left:
       - text: "Home"
         href: index.qmd
