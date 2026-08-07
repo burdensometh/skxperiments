@@ -1,0 +1,56 @@
+name: Publish docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '_quarto.yml'
+      - 'index.qmd'
+      - 'docs/**'
+      - 'examples/**'
+      - 'skxperiments/**'
+      - 'pyproject.toml'
+      - '.github/workflows/quarto-publish.yml'
+  workflow_dispatch:
+
+# Cancel superseded runs on the same branch (a fresher push wins)
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write   # needed by the gh-pages branch push
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so the site can show the last-updated timestamp
+          fetch-depth: 0
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: 'pip'
+          cache-dependency-path: 'pyproject.toml'
+
+      - name: Install skxperiments (dev extras)
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+
+      - name: Publish to GitHub Pages
+        uses: quarto-dev/quarto-actions/publish@v2
+        with:
+          target: gh-pages
+        env:
+          # The action provides this token automatically; it just needs to be
+          # forwarded so the gh-pages push is authenticated.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

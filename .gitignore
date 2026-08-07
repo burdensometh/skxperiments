@@ -57,3 +57,8 @@ Thumbs.db
 *.ipynb_checkpoints
 examples/use_cases/_build_notebooks.py
 examples/use_cases/_generate_data.py
+
+# Quarto site build artifacts (published to gh-pages, not tracked on main)
+/_site/
+/.quarto/
+/_freeze/

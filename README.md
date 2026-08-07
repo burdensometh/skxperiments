@@ -3,9 +3,12 @@
 > Randomization-based experimental design and causal inference, sklearn-style.
 
 [![CI](https://github.com/gusbruschi13/skxperiments/actions/workflows/ci.yml/badge.svg)](https://github.com/gusbruschi13/skxperiments/actions/workflows/ci.yml)
+[![Docs](https://github.com/gusbruschi13/skxperiments/actions/workflows/quarto-publish.yml/badge.svg)](https://gusbruschi13.github.io/skxperiments/)
 [![PyPI](https://img.shields.io/pypi/v/skxperiments?include_prereleases)](https://pypi.org/project/skxperiments/)
 ![Python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![Status](https://img.shields.io/badge/status-alpha-orange)
+
+**Documentation site:** <https://gusbruschi13.github.io/skxperiments/> · bilingual (English + Português).
 
 A Python library for designing randomized experiments and estimating causal effects under the
 potential outcomes framework (Rubin Causal Model). Treatment assignment is the starting point;

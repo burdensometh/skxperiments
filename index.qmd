@@ -1,0 +1,93 @@
+---
+title: "skxperiments"
+subtitle: "Randomization-based experimental design and causal inference, sklearn-style."
+pagetitle: "skxperiments"
+page-layout: full
+toc: false
+listing: false
+---
+
+::: {.grid}
+
+::: {.g-col-12 .g-col-md-6}
+
+## English
+
+A Python library for designing randomized experiments and estimating causal
+effects under the potential outcomes framework (Rubin Causal Model). Treatment
+assignment is the starting point; statistical models come second.
+
+### Install
+
+```bash
+pip install --pre "skxperiments[viz]"
+```
+
+### Start here
+
+- [**Case studies**](examples/use_cases/en/01_ecommerce_checkout.ipynb) —
+  five end-to-end business decisions, one per sector, that break the test on
+  purpose to teach where the method (and this dev-stage library) stops
+  covering you.
+- [**For starters**](examples/for_starters/en/00_why_randomize.ipynb) — one
+  experimentation concept per notebook, from *why randomize* to a full
+  pipeline.
+- [**Theory series**](docs/en/index.md) — five chapters that build the
+  concepts and the math behind the library, with worked examples.
+
+### The core idea
+
+Treatment assignment is primary, not the statistical model. `Assignment` is
+the contract between designs and estimators, randomization-based inference is
+the default, and finite-population vs. superpopulation inference are
+distinguished explicitly. See the
+[design philosophy](https://github.com/gusbruschi13/skxperiments#design-philosophy)
+in the README.
+
+:::
+
+::: {.g-col-12 .g-col-md-6}
+
+## Português (BR)
+
+Uma biblioteca em Python para desenhar experimentos randomizados e estimar
+efeitos causais sob o framework de *potential outcomes* (modelo causal de
+Rubin). A **atribuição do tratamento** é o ponto de partida; o modelo
+estatístico vem depois.
+
+### Instalação
+
+```bash
+pip install --pre "skxperiments[viz]"
+```
+
+### Comece por aqui
+
+- [**Estudos de caso**](examples/use_cases/pt-br/01_ecommerce_checkout.ipynb)
+  — cinco decisões de negócio ponta a ponta, uma por setor, que quebram o
+  teste de propósito para ensinar onde o método (e essa lib em estágio de
+  desenvolvimento) para de te cobrir.
+- [**Para começar**](examples/for_starters/pt-br/00_why_randomize.ipynb) — um
+  conceito de experimentação por notebook, do *por que randomizar* até um
+  pipeline completo.
+- [**Série de teoria**](docs/pt-br/index.md) — cinco capítulos que constroem
+  os conceitos e a matemática por trás da biblioteca, com exemplos numéricos.
+
+### A ideia central
+
+A atribuição do tratamento é primária, não o modelo estatístico.
+`Assignment` é o contrato entre desenhos e estimadores, a inferência
+por randomização é o padrão, e populações finita vs. super são distinguidas
+explicitamente. Veja a
+[filosofia de desenho](https://github.com/gusbruschi13/skxperiments#design-philosophy)
+no README.
+
+:::
+
+:::
+
+::: {.callout-note appearance="minimal"}
+**Status:** `0.1.0.dev0` on PyPI, alpha. The v1 feature set is complete;
+sequential/always-valid inference is deferred to v2. See
+[ROADMAP](https://github.com/gusbruschi13/skxperiments/blob/main/ROADMAP.md).
+:::

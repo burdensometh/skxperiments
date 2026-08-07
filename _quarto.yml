@@ -1,0 +1,158 @@
+project:
+  type: website
+  output-dir: _site
+  render:
+    - "index.qmd"
+    - "docs/**/*.md"
+    - "examples/**/*.ipynb"
+    - "!examples/**/README.md"
+    - "!docs/README.md"
+  resources:
+    - "examples/use_cases/data/*.csv"
+
+website:
+  title: "skxperiments"
+  description: "Randomization-based experimental design and causal inference, sklearn-style."
+  repo-url: https://github.com/gusbruschi13/skxperiments
+  repo-actions: [edit, issue]
+  page-navigation: true
+  search:
+    location: navbar
+    type: overlay
+  navbar:
+    logo: null
+    left:
+      - text: "Home"
+        href: index.qmd
+      - text: "Case studies"
+        menu:
+          - text: "English"
+            href: examples/use_cases/en/01_ecommerce_checkout.ipynb
+          - text: "Português (BR)"
+            href: examples/use_cases/pt-br/01_ecommerce_checkout.ipynb
+      - text: "For starters"
+        menu:
+          - text: "English"
+            href: examples/for_starters/en/00_why_randomize.ipynb
+          - text: "Português (BR)"
+            href: examples/for_starters/pt-br/00_why_randomize.ipynb
+      - text: "Theory"
+        menu:
+          - text: "English"
+            href: docs/en/index.md
+          - text: "Português (BR)"
+            href: docs/pt-br/index.md
+    right:
+      - icon: github
+        href: https://github.com/gusbruschi13/skxperiments
+        aria-label: GitHub
+
+  sidebar:
+    - id: case-studies-en
+      title: "Case studies (EN)"
+      style: docked
+      contents:
+        - section: "Case studies"
+          contents:
+            - examples/use_cases/en/01_ecommerce_checkout.ipynb
+            - examples/use_cases/en/02_fashion_stores_blocking.ipynb
+            - examples/use_cases/en/03_fintech_factorial.ipynb
+            - examples/use_cases/en/04_logistics_rerandomization.ipynb
+            - examples/use_cases/en/05_streaming_many_metrics.ipynb
+    - id: case-studies-ptbr
+      title: "Estudos de caso (PT-BR)"
+      style: docked
+      contents:
+        - section: "Estudos de caso"
+          contents:
+            - examples/use_cases/pt-br/01_ecommerce_checkout.ipynb
+            - examples/use_cases/pt-br/02_fashion_stores_blocking.ipynb
+            - examples/use_cases/pt-br/03_fintech_factorial.ipynb
+            - examples/use_cases/pt-br/04_logistics_rerandomization.ipynb
+            - examples/use_cases/pt-br/05_streaming_many_metrics.ipynb
+    - id: for-starters-en
+      title: "For starters (EN)"
+      style: docked
+      contents:
+        - section: "One concept per notebook"
+          contents:
+            - examples/for_starters/en/00_why_randomize.ipynb
+            - examples/for_starters/en/01_first_experiment.ipynb
+            - examples/for_starters/en/02_inference_three_ways.ipynb
+            - examples/for_starters/en/03_reducing_variance.ipynb
+            - examples/for_starters/en/04_balance_rerandomization.ipynb
+            - examples/for_starters/en/05_blocking.ipynb
+            - examples/for_starters/en/06_factorial.ipynb
+            - examples/for_starters/en/07_many_tests.ipynb
+            - examples/for_starters/en/08_diagnostics.ipynb
+            - examples/for_starters/en/09_putting_it_together.ipynb
+    - id: for-starters-ptbr
+      title: "Para começar (PT-BR)"
+      style: docked
+      contents:
+        - section: "Um conceito por notebook"
+          contents:
+            - examples/for_starters/pt-br/00_why_randomize.ipynb
+            - examples/for_starters/pt-br/01_first_experiment.ipynb
+            - examples/for_starters/pt-br/02_inference_three_ways.ipynb
+            - examples/for_starters/pt-br/03_reducing_variance.ipynb
+            - examples/for_starters/pt-br/04_balance_rerandomization.ipynb
+            - examples/for_starters/pt-br/05_blocking.ipynb
+            - examples/for_starters/pt-br/06_factorial.ipynb
+            - examples/for_starters/pt-br/07_many_tests.ipynb
+            - examples/for_starters/pt-br/08_diagnostics.ipynb
+            - examples/for_starters/pt-br/09_putting_it_together.ipynb
+    - id: theory-en
+      title: "Theory (EN)"
+      style: docked
+      contents:
+        - section: "Concepts and math"
+          contents:
+            - docs/en/index.md
+            - docs/en/choosing.md
+            - docs/en/glossary.md
+            - section: "Theory series"
+              contents:
+                - docs/en/theory/01-foundations.md
+                - docs/en/theory/02-designs.md
+                - docs/en/theory/03-estimation.md
+                - docs/en/theory/04-inference.md
+                - docs/en/theory/05-diagnostics.md
+    - id: theory-ptbr
+      title: "Teoria (PT-BR)"
+      style: docked
+      contents:
+        - section: "Conceitos e matemática"
+          contents:
+            - docs/pt-br/index.md
+            - docs/pt-br/escolhendo.md
+            - docs/pt-br/glossario.md
+            - section: "Série de teoria"
+              contents:
+                - docs/pt-br/teoria/01-fundamentos.md
+                - docs/pt-br/teoria/02-desenhos.md
+                - docs/pt-br/teoria/03-estimacao.md
+                - docs/pt-br/teoria/04-inferencia.md
+                - docs/pt-br/teoria/05-diagnosticos.md
+
+  page-footer:
+    left: "© 2026 Gustavo Bruschi · MIT License"
+    right: "Built with [Quarto](https://quarto.org/)"
+
+format:
+  html:
+    theme:
+      light: cosmo
+      dark: darkly
+    toc: true
+    toc-depth: 3
+    code-copy: true
+    code-overflow: wrap
+    code-tools: false
+    highlight-style: github
+    smooth-scroll: true
+    link-external-newwindow: true
+    fig-align: center
+
+execute:
+  freeze: auto
