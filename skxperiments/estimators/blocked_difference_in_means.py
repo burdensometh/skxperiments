@@ -7,9 +7,12 @@ CRD (Imbens & Rubin 2015, Chapter 9).
 
 import pandas as pd
 
-from skxperiments.core.assignment import BlockedAssignment
+from skxperiments.core.assignment import BlockedAssignment, ClusterAssignment
 from skxperiments.core.base import BaseEstimator
-from skxperiments.core.exceptions import InvalidDesignError
+from skxperiments.core.exceptions import (
+    DesignEstimatorMismatch,
+    InvalidDesignError,
+)
 from skxperiments.core.results import Results
 
 
@@ -97,11 +100,22 @@ class BlockedDifferenceInMeans(BaseEstimator):
         ------
         DesignEstimatorMismatch
             If ``assignment`` is not a ``BlockedAssignment``.
+            ``ClusterAssignment`` is rejected with a pointer to
+            ``ClusterDifferenceInMeans``: under cluster randomization
+            the cluster — not the individual — is the randomization
+            unit.
         InvalidDesignError
             If ``outcome_col`` is missing, non-numeric, or contains
             NaN; or if any block has zero treated or zero control
             units.
         """
+        if isinstance(assignment, ClusterAssignment):
+            raise DesignEstimatorMismatch(
+                estimator_name=type(self).__name__,
+                received_type="ClusterAssignment",
+                expected_type="BlockedAssignment",
+                suggestion="ClusterDifferenceInMeans",
+            )
         self._validate_assignment_type(assignment, BlockedAssignment)
 
         data = assignment.data_

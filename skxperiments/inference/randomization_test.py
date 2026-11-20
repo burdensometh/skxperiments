@@ -25,11 +25,23 @@ import numpy as np
 
 from skxperiments.core.assignment import (
     BlockedAssignment,
+    ClusterAssignment,
     CRDAssignment,
 )
 from skxperiments.core.base import BaseEstimator, BaseInference
 from skxperiments.core.exceptions import InvalidDesignError
 from skxperiments.core.results import Results
+
+# Results.extra keys written by cluster-aware estimators (e.g.,
+# ClusterDifferenceInMeans) that RandomizationTest propagates into its
+# own Results, so the final output carries both individual-level
+# n_obs and the cluster counts (the actual randomization units).
+_CLUSTER_EXTRA_KEYS = (
+    "estimand",
+    "n_clusters",
+    "n_clusters_treated",
+    "n_clusters_control",
+)
 
 
 class RandomizationTest(BaseInference):
@@ -86,7 +98,7 @@ class RandomizationTest(BaseInference):
 
     Attributes
     ----------
-    assignment_ : CRDAssignment or BlockedAssignment
+    assignment_ : CRDAssignment or BlockedAssignment or ClusterAssignment
         The assignment passed to ``fit``.
     observed_statistic_ : float
         ATE estimated by the estimator on the original assignment,
@@ -115,6 +127,16 @@ class RandomizationTest(BaseInference):
     permutation rerandomizes within blocks, preserving the within-block
     treatment proportion. This is the correct null distribution for the
     blocked design.
+
+    **Cluster randomization.** When ``assignment`` is a
+    ``ClusterAssignment``, each permutation relabels **whole clusters**
+    (never individuals independently): ``ClusterAssignment.draw``
+    re-randomizes the unique-cluster population through the generating
+    ``ClusterDesign`` and re-propagates labels to the same individuals.
+    Pair it with a cluster-aware estimator such as
+    ``ClusterDifferenceInMeans``; the cluster counts and estimand
+    recorded in the estimator's ``Results.extra`` are propagated to
+    this test's ``Results.extra``.
 
     **Estimator state after `fit`.** The permutation loop refits
     ``self.estimator`` ``n_permutations`` times. After ``fit``
@@ -190,13 +212,13 @@ class RandomizationTest(BaseInference):
 
     def fit(
         self,
-        assignment: CRDAssignment | BlockedAssignment,
+        assignment: CRDAssignment | BlockedAssignment | ClusterAssignment,
     ) -> "RandomizationTest":
         """Run the permutation loop and compute the p-value.
 
         Parameters
         ----------
-        assignment : CRDAssignment or BlockedAssignment
+        assignment : CRDAssignment or BlockedAssignment or ClusterAssignment
             Observed assignment. ``FactorialAssignment`` is rejected
             with ``DesignEstimatorMismatch``.
 
@@ -208,15 +230,15 @@ class RandomizationTest(BaseInference):
         Raises
         ------
         DesignEstimatorMismatch
-            If ``assignment`` is not a ``CRDAssignment`` or
-            ``BlockedAssignment``.
+            If ``assignment`` is not a ``CRDAssignment``,
+            ``BlockedAssignment``, or ``ClusterAssignment``.
         InvalidDesignError
             If the estimator produces a multi-effect ``Results``
             (i.e., ``Results.ate is None``); v1 supports only scalar
             estimands.
         """
         self._validate_assignment_type(
-            assignment, (CRDAssignment, BlockedAssignment)
+            assignment, (CRDAssignment, BlockedAssignment, ClusterAssignment)
         )
 
         # Refit on the original assignment to compute the observed
@@ -242,6 +264,13 @@ class RandomizationTest(BaseInference):
         self._n_control = base_results.n_control
         self._estimator_name = base_results.estimator_name
         self._design_name = base_results.design_name
+        # Cluster-level metadata written by cluster-aware estimators;
+        # empty for non-cluster assignments.
+        self._cluster_extra = {
+            k: v
+            for k, v in (base_results.extra or {}).items()
+            if k in _CLUSTER_EXTRA_KEYS
+        }
 
         # Pre-generate one seed per permutation for reproducibility:
         # same self.seed -> same null_distribution_.
@@ -268,7 +297,9 @@ class RandomizationTest(BaseInference):
 
         p_value = (1 + n_extreme) / (1 + self.n_permutations)
 
-        self.assignment_: CRDAssignment | BlockedAssignment = assignment
+        self.assignment_: CRDAssignment | BlockedAssignment | ClusterAssignment = (
+            assignment
+        )
         self.observed_statistic_: float = observed_statistic
         self.null_distribution_: np.ndarray = null_distribution
         self.p_value_: float = float(p_value)
@@ -291,7 +322,10 @@ class RandomizationTest(BaseInference):
             - ``p_value`` set to the Monte Carlo p-value;
             - ``inference_name="RandomizationTest"``;
             - ``extra`` containing ``n_permutations``,
-              ``null_distribution``, ``alternative``;
+              ``null_distribution``, ``alternative``, plus the
+              cluster-level keys (``estimand``, ``n_clusters``,
+              ``n_clusters_treated``, ``n_clusters_control``) when the
+              estimator reported them;
             - ``se`` and ``ci`` set to ``None`` (RandomizationTest
               produces only a p-value).
 
@@ -312,6 +346,7 @@ class RandomizationTest(BaseInference):
             design_name=self._design_name,
             inference_name=type(self).__name__,
             extra={
+                **self._cluster_extra,
                 "n_permutations": self.n_permutations,
                 "null_distribution": self.null_distribution_,
                 "alternative": self.alternative,

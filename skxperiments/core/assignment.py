@@ -376,6 +376,198 @@ class BlockedAssignment(BaseAssignment):
             self.design_.seed = original_seed
 
 
+class ClusterAssignment(BaseAssignment):
+    """Assignment resulting from a cluster-randomized design.
+
+    Treatment is randomized over whole clusters (e.g., stores), while
+    outcomes are recorded at the individual level (e.g., customers).
+    Every individual inherits the treatment label of its cluster, so
+    the number of independent randomization units is the number of
+    clusters — **not** the number of rows.
+
+    The individual-level data are preserved verbatim (one row per
+    individual, original columns intact): within-cluster unit identity
+    is retained so that cluster-level aggregations can be recomputed
+    and so that ``draw()`` can re-propagate a fresh cluster-level
+    randomization onto the same individuals.
+
+    Parameters
+    ----------
+    data : pd.DataFrame
+        Copy of the original (individual-level) DataFrame with the
+        treatment column added. Treatment must be constant within
+        each cluster.
+    treatment_col : str
+        Name of the treatment column.
+    design : Any
+        Reference to the ClusterDesign that generated this assignment.
+    cluster_col : str
+        Name of the column identifying clusters.
+    cluster_sizes : dict
+        Mapping from cluster label to number of individuals in that
+        cluster.
+    seed : int or None, optional
+        Random seed used for the randomization, by default None.
+
+    Attributes
+    ----------
+    cluster_col_ : str
+        Name of the cluster column.
+    cluster_sizes_ : dict
+        Mapping from cluster label to cluster size (individuals).
+    n_clusters_ : int
+        Number of unique clusters (the number of independent
+        randomization units).
+    n_clusters_treated_ : int
+        Number of clusters assigned to treatment.
+    n_clusters_control_ : int
+        Number of clusters assigned to control.
+    seed_ : int or None
+        Seed used in the randomization.
+
+    Notes
+    -----
+    ``n_units_``, ``n_treated_``, and ``n_control_`` (inherited from
+    ``BaseAssignment``) count **individuals**, matching the rows of
+    ``data_``. The cluster-level counts are exposed separately as
+    ``n_clusters_``, ``n_clusters_treated_``, and
+    ``n_clusters_control_``; neither is silently substituted for the
+    other.
+    """
+
+    def __init__(
+        self,
+        data: pd.DataFrame,
+        treatment_col: str,
+        design: Any,
+        cluster_col: str,
+        cluster_sizes: dict,
+        seed: int | None = None,
+    ) -> None:
+        super().__init__(data=data, treatment_col=treatment_col, design=design)
+        if cluster_col not in data.columns:
+            raise InvalidDesignError(
+                f"Cluster column '{cluster_col}' not found in DataFrame. "
+                f"Available columns: {list(data.columns)}."
+            )
+        if cluster_col == treatment_col:
+            raise InvalidDesignError(
+                f"Cluster column and treatment column must differ; "
+                f"both are '{cluster_col}'."
+            )
+
+        data_labels = set(data[cluster_col].unique())
+        if set(cluster_sizes) != data_labels:
+            raise InvalidDesignError(
+                "cluster_sizes keys do not match the cluster labels "
+                f"present in the data. cluster_sizes keys: "
+                f"{sorted(set(cluster_sizes), key=str)}; data labels: "
+                f"{sorted(data_labels, key=str)}."
+            )
+
+        self.cluster_col_: str = cluster_col
+        self.cluster_sizes_: dict = dict(cluster_sizes)
+        self.n_clusters_: int = len(cluster_sizes)
+        self.seed_: int | None = seed
+        self._validate_treatment_col()
+        self._validate_cluster_integrity()
+
+        cluster_treatment = self._cluster_treatment()
+        self.n_clusters_treated_: int = int((cluster_treatment == 1).sum())
+        self.n_clusters_control_: int = int((cluster_treatment == 0).sum())
+
+    def _cluster_treatment(self) -> "pd.Series":
+        """Return the treatment label of each cluster (indexed by label)."""
+        return self.data_.groupby(self.cluster_col_)[self.treatment_col_].first()
+
+    def _validate_cluster_integrity(self) -> None:
+        """Validate that treatment is constant within each cluster.
+
+        Raises
+        ------
+        InvalidDesignError
+            If any cluster contains both treated and control
+            individuals — under cluster randomization all individuals
+            of a cluster must share the cluster's label.
+        """
+        n_unique = self.data_.groupby(self.cluster_col_)[
+            self.treatment_col_
+        ].nunique()
+        if (n_unique > 1).any():
+            offending = n_unique[n_unique > 1].index.tolist()
+            raise InvalidDesignError(
+                f"Treatment must be constant within each cluster, but "
+                f"cluster(s) {offending} contain both treated and "
+                f"control individuals. Cluster-randomized labels must "
+                f"be assigned to whole clusters."
+            )
+
+    def treated_ids(self) -> np.ndarray:
+        """Return iloc positions of treated individuals."""
+        return np.where(self.data_[self.treatment_col_].values == 1)[0]
+
+    def control_ids(self) -> np.ndarray:
+        """Return iloc positions of control individuals."""
+        return np.where(self.data_[self.treatment_col_].values == 0)[0]
+
+    def treated_cluster_labels(self) -> np.ndarray:
+        """Return labels of clusters assigned to treatment."""
+        cluster_treatment = self._cluster_treatment()
+        return cluster_treatment[cluster_treatment == 1].index.to_numpy()
+
+    def control_cluster_labels(self) -> np.ndarray:
+        """Return labels of clusters assigned to control."""
+        cluster_treatment = self._cluster_treatment()
+        return cluster_treatment[cluster_treatment == 0].index.to_numpy()
+
+    def draw(self, seed: int | None = None) -> "ClusterAssignment":
+        """Generate a new realization under the same cluster mechanism.
+
+        Re-randomizes **whole clusters** on the unique-cluster
+        population (via the generating ClusterDesign and its base
+        design) and re-propagates the labels to the same individuals.
+        Individual rows are never relabeled independently: all members
+        of a cluster switch arm together.
+
+        Parameters
+        ----------
+        seed : int or None, optional
+            Random seed for the new draw, by default None.
+
+        Returns
+        -------
+        ClusterAssignment
+            New ClusterAssignment over the same individuals and
+            clusters, with a freshly drawn cluster-level treatment
+            vector.
+
+        Raises
+        ------
+        InvalidDesignError
+            If this Assignment was constructed without a reference to
+            a generating design.
+        """
+        if self.design_ is None:
+            raise InvalidDesignError(
+                "Cannot draw a new realization: this ClusterAssignment "
+                "was constructed without a reference to a generating "
+                "design."
+            )
+
+        df_clean = self.data_.drop(columns=[self.treatment_col_])
+
+        # The seed lives on the wrapped base design (single source of
+        # truth); override it temporarily, mirroring the pattern used
+        # by CRDAssignment.draw.
+        base_design = self.design_.base_design
+        original_seed = getattr(base_design, "seed", None)
+        try:
+            base_design.seed = seed
+            return self.design_.randomize(df_clean)
+        finally:
+            base_design.seed = original_seed
+
+
 class FactorialAssignment(BaseAssignment):
     """Assignment resulting from a 2^K Factorial Design.
 

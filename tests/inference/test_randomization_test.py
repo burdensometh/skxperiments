@@ -7,6 +7,7 @@ from scipy import stats
 
 from skxperiments.core.assignment import (
     BlockedAssignment,
+    ClusterAssignment,
     CRDAssignment,
     FactorialAssignment,
 )
@@ -18,10 +19,14 @@ from skxperiments.core.exceptions import (
 )
 from skxperiments.core.results import Results
 from skxperiments.design.blocked_crd import BlockedCRD
+from skxperiments.design.cluster import ClusterDesign
 from skxperiments.design.crd import CRD
 from skxperiments.design.rerandomized_crd import ReRandomizedCRD
 from skxperiments.estimators.blocked_difference_in_means import (
     BlockedDifferenceInMeans,
+)
+from skxperiments.estimators.cluster_difference_in_means import (
+    ClusterDifferenceInMeans,
 )
 from skxperiments.estimators.cuped import CUPED
 from skxperiments.estimators.difference_in_means import DifferenceInMeans
@@ -888,3 +893,232 @@ class TestRandomizationTestAlternatives:
                 f"Expected p_less >= p_two_sided >= p_greater, got "
                 f"{p_less:.4f}, {p_two_sided:.4f}, {p_greater:.4f}."
             )
+
+# ---------------------------------------------------------------------------
+# Cluster-randomized assignments
+# ---------------------------------------------------------------------------
+
+
+def _make_cluster_assignment_with_ate(
+    n_clusters: int,
+    customers_per_cluster: int,
+    seed: int,
+    true_ate: float = 0.0,
+    blocked: bool = False,
+) -> ClusterAssignment:
+    """Build a ClusterAssignment with outcome Y = X + true_ate * T + noise.
+
+    The treatment effect is injected at the cluster level (every
+    customer of a treated cluster shifts by true_ate).
+    """
+    rng = np.random.default_rng(seed)
+    store_ids: list[str] = []
+    for i in range(n_clusters):
+        store_ids.extend([f"store_{i}"] * customers_per_cluster)
+    n = len(store_ids)
+    df = pd.DataFrame(
+        {
+            "store_id": store_ids,
+            "x": rng.normal(0.0, 1.0, n),
+        }
+    )
+    if blocked:
+        half = n_clusters // 2
+        store_block = {
+            f"store_{i}": ("A" if i < half else "B")
+            for i in range(n_clusters)
+        }
+        df["region"] = df["store_id"].map(store_block)
+        base = BlockedCRD(block_col="region", p=0.5, seed=seed)
+    else:
+        base = CRD(p=0.5, seed=seed)
+    design = ClusterDesign(cluster_col="store_id", base_design=base)
+    assignment = design.randomize(df)
+
+    t = assignment.data_[assignment.treatment_col_].values.astype(float)
+    x = assignment.data_["x"].values
+    assignment.data_["y"] = x + true_ate * t + rng.normal(0.0, 1.0, n)
+    return assignment
+
+
+class TestRandomizationTestCluster:
+    """RandomizationTest support for ClusterAssignment."""
+
+    def test_fit_accepts_cluster_assignment(self) -> None:
+        """fit must accept a ClusterAssignment with a cluster-aware
+        estimator."""
+        assignment = _make_cluster_assignment_with_ate(
+            n_clusters=20, customers_per_cluster=5, seed=0
+        )
+        rt = RandomizationTest(
+            estimator=ClusterDifferenceInMeans(outcome_col="y"),
+            n_permutations=200,
+            seed=0,
+        )
+        rt.fit(assignment)
+        assert isinstance(rt.assignment_, ClusterAssignment)
+        assert len(rt.null_distribution_) == 200
+        assert 0.0 < rt.p_value_ <= 1.0
+
+    def test_observed_statistic_matches_estimator(self) -> None:
+        """The observed statistic must equal the cluster estimator's
+        ATE on the original assignment."""
+        assignment = _make_cluster_assignment_with_ate(
+            n_clusters=20, customers_per_cluster=5, seed=1, true_ate=0.5
+        )
+        estimator = ClusterDifferenceInMeans(outcome_col="y")
+        rt = RandomizationTest(
+            estimator=estimator, n_permutations=100, seed=0
+        )
+        rt.fit(assignment)
+        expected = estimator.fit(assignment).estimate().ate
+        assert rt.observed_statistic_ == pytest.approx(expected)
+
+    def test_strong_effect_yields_small_pvalue(self) -> None:
+        """A strong cluster-level effect must be detected."""
+        assignment = _make_cluster_assignment_with_ate(
+            n_clusters=30, customers_per_cluster=5, seed=2, true_ate=2.0
+        )
+        rt = RandomizationTest(
+            estimator=ClusterDifferenceInMeans(outcome_col="y"),
+            n_permutations=500,
+            seed=0,
+        )
+        rt.fit(assignment)
+        assert rt.p_value_ < 0.05
+
+    def test_no_effect_yields_non_extreme_pvalue(self) -> None:
+        """Under the null the p-value should not be extreme."""
+        assignment = _make_cluster_assignment_with_ate(
+            n_clusters=30, customers_per_cluster=5, seed=3, true_ate=0.0
+        )
+        rt = RandomizationTest(
+            estimator=ClusterDifferenceInMeans(outcome_col="y"),
+            n_permutations=500,
+            seed=0,
+        )
+        rt.fit(assignment)
+        assert rt.p_value_ > 0.01
+
+    def test_each_permutation_relabels_whole_clusters(self) -> None:
+        """The null distribution must be generated by whole-cluster
+        relabeling: refitting on a draw keeps treatment constant
+        within clusters and preserves the treated-cluster count."""
+        assignment = _make_cluster_assignment_with_ate(
+            n_clusters=20, customers_per_cluster=5, seed=0
+        )
+        rt = RandomizationTest(
+            estimator=ClusterDifferenceInMeans(outcome_col="y"),
+            n_permutations=50,
+            seed=0,
+        )
+        rt.fit(assignment)
+        # The estimator ends fitted on the last permutation's draw.
+        last_draw = rt.estimator.assignment_
+        assert isinstance(last_draw, ClusterAssignment)
+        n_unique = last_draw.data_.groupby("store_id")[
+            "treatment"
+        ].nunique()
+        assert (n_unique == 1).all()
+        assert last_draw.n_clusters_treated_ == 10
+
+    def test_cluster_metadata_propagated_to_results(self) -> None:
+        """estimate() must carry individual n_obs plus cluster counts
+        in extra — n_obs is not silently swapped for the cluster
+        count."""
+        assignment = _make_cluster_assignment_with_ate(
+            n_clusters=20, customers_per_cluster=5, seed=0
+        )
+        rt = RandomizationTest(
+            estimator=ClusterDifferenceInMeans(outcome_col="y"),
+            n_permutations=100,
+            seed=0,
+        )
+        result = rt.fit(assignment).estimate()
+
+        assert result.n_obs == 100  # individuals, not clusters
+        assert result.extra is not None
+        assert result.extra["n_clusters"] == 20
+        assert result.extra["n_clusters_treated"] == 10
+        assert result.extra["n_clusters_control"] == 10
+        assert result.extra["estimand"] == "cluster_mean"
+        assert result.extra["n_permutations"] == 100
+        assert result.estimator_name == "ClusterDifferenceInMeans"
+        assert result.design_name == "ClusterDesign"
+
+    def test_exposure_weighted_estimand_propagated(self) -> None:
+        """The exposure_weighted estimand label must reach the final
+        Results."""
+        assignment = _make_cluster_assignment_with_ate(
+            n_clusters=20, customers_per_cluster=5, seed=0
+        )
+        assignment.data_["w"] = 1.0  # constant exposure per cluster
+        rt = RandomizationTest(
+            estimator=ClusterDifferenceInMeans(
+                outcome_col="y",
+                estimand="exposure_weighted",
+                weight_col="w",
+            ),
+            n_permutations=100,
+            seed=0,
+        )
+        result = rt.fit(assignment).estimate()
+        assert result.extra is not None
+        assert result.extra["estimand"] == "exposure_weighted"
+
+    def test_blocked_cluster_assignment(self) -> None:
+        """Cluster-randomization within blocks must be supported."""
+        assignment = _make_cluster_assignment_with_ate(
+            n_clusters=20,
+            customers_per_cluster=5,
+            seed=0,
+            true_ate=1.0,
+            blocked=True,
+        )
+        rt = RandomizationTest(
+            estimator=ClusterDifferenceInMeans(outcome_col="y"),
+            n_permutations=200,
+            seed=0,
+        )
+        rt.fit(assignment)
+        assert 0.0 < rt.p_value_ <= 1.0
+        # Each permutation must preserve the blocked structure: the
+        # last draw keeps 5 treated clusters per region.
+        last_draw = rt.estimator.assignment_
+        data = last_draw.data_
+        cluster_block = data.groupby("store_id")["region"].first()
+        cluster_t = data.groupby("store_id")["treatment"].first()
+        for region in ("A", "B"):
+            labels = cluster_block[cluster_block == region].index
+            assert int(cluster_t[labels].sum()) == 5
+
+    def test_reproducibility_with_seed(self) -> None:
+        """Same seed must reproduce the same null distribution."""
+        assignment = _make_cluster_assignment_with_ate(
+            n_clusters=20, customers_per_cluster=5, seed=0
+        )
+
+        def _run() -> np.ndarray:
+            rt = RandomizationTest(
+                estimator=ClusterDifferenceInMeans(outcome_col="y"),
+                n_permutations=100,
+                seed=7,
+            )
+            rt.fit(assignment)
+            return rt.null_distribution_
+
+        np.testing.assert_array_equal(_run(), _run())
+
+    def test_unit_level_estimator_rejected_on_cluster(self) -> None:
+        """Pairing a ClusterAssignment with plain DifferenceInMeans
+        must fail via the estimator's own validation."""
+        assignment = _make_cluster_assignment_with_ate(
+            n_clusters=20, customers_per_cluster=5, seed=0
+        )
+        rt = RandomizationTest(
+            estimator=DifferenceInMeans(outcome_col="y"),
+            n_permutations=10,
+            seed=0,
+        )
+        with pytest.raises(DesignEstimatorMismatch):
+            rt.fit(assignment)

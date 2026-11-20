@@ -25,10 +25,12 @@ from scipy.stats import norm
 
 from skxperiments.core.assignment import (
     BlockedAssignment,
+    ClusterAssignment,
     CRDAssignment,
 )
 from skxperiments.core.base import BaseEstimator, BaseInference
 from skxperiments.core.exceptions import (
+    DesignEstimatorMismatch,
     InsufficientDataError,
     InvalidDesignError,
 )
@@ -201,7 +203,9 @@ class BootstrapCI(BaseInference):
         ------
         DesignEstimatorMismatch
             If ``assignment`` is not a ``CRDAssignment`` or
-            ``BlockedAssignment``.
+            ``BlockedAssignment``. ``ClusterAssignment`` is rejected
+            explicitly: resampling individuals would break the cluster
+            structure and overstate the effective sample size.
         InvalidDesignError
             If the estimator returns a multi-effect ``Results``
             (``Results.ate is None``), or if the BCa bias-correction is
@@ -210,6 +214,18 @@ class BootstrapCI(BaseInference):
             If any arm (CRD) or block-by-arm stratum (blocked) has fewer
             than 2 units.
         """
+        if isinstance(assignment, ClusterAssignment):
+            raise DesignEstimatorMismatch(
+                estimator_name=type(self).__name__,
+                received_type="ClusterAssignment",
+                expected_type="CRDAssignment or BlockedAssignment",
+                suggestion=(
+                    "RandomizationTest (cluster-randomized designs "
+                    "support randomization-based inference only in v1; "
+                    "resampling individuals would break the cluster "
+                    "structure)"
+                ),
+            )
         self._validate_assignment_type(
             assignment, (CRDAssignment, BlockedAssignment)
         )

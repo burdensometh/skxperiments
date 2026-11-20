@@ -9,6 +9,9 @@ only.
 from skxperiments.estimators.blocked_difference_in_means import (
     BlockedDifferenceInMeans,
 )
+from skxperiments.estimators.cluster_difference_in_means import (
+    ClusterDifferenceInMeans,
+)
 from skxperiments.estimators.cuped import CUPED
 from skxperiments.estimators.difference_in_means import DifferenceInMeans
 from skxperiments.estimators.factorial_estimator import FactorialEstimator
@@ -17,6 +20,7 @@ from skxperiments.estimators.lin_estimator import LinEstimator
 __all__ = [
     "BlockedDifferenceInMeans",
     "CUPED",
+    "ClusterDifferenceInMeans",
     "DifferenceInMeans",
     "FactorialEstimator",
     "LinEstimator",

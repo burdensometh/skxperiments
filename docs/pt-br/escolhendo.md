@@ -12,6 +12,7 @@ diagnósticos. Na dúvida, comece pelo mais simples (`CRD` +
 | Variável categórica conhecida que afeta o resultado (região, device) | `BlockedCRD` |
 | Quer balanço garantido em covariáveis contínuas | `ReRandomizedCRD` |
 | Testar vários fatores ao mesmo tempo | `FactorialDesign` |
+| Unidade de randomização é um grupo (ex.: loja), resultado registrado por indivíduo (ex.: cliente) | `ClusterDesign` (envolvendo `CRD` ou `BlockedCRD`) |
 
 ## 2. Qual estimador?
 
@@ -22,6 +23,7 @@ diagnósticos. Na dúvida, comece pelo mais simples (`CRD` +
 | CRD, com métrica pré-experimento | `CUPED` |
 | Blocado | `BlockedDifferenceInMeans` |
 | Fatorial | `FactorialEstimator` |
+| Randomização por conglomerado | `ClusterDifferenceInMeans` (escolha o estimando: `cluster_mean` ou `exposure_weighted`) |
 
 ## 3. Qual inferência?
 
@@ -36,6 +38,12 @@ Nota: na v1, o `NeymanCI` cobre `DifferenceInMeans` e
 `BlockedDifferenceInMeans`. Para obter um intervalo com `LinEstimator` ou
 `CUPED`, use o `BootstrapCI` (que aceita qualquer estimador escalar) ou o
 `RandomizationTest`.
+
+Assignments por conglomerado (`ClusterAssignment`) suportam apenas o
+`RandomizationTest` na v1: cada permutação troca o rótulo de
+conglomerados inteiros. `NeymanCI` e `BootstrapCI` os rejeitam
+explicitamente — suas variâncias tratariam indivíduos como unidades de
+randomização independentes.
 
 ## 4. Sempre: diagnósticos
 

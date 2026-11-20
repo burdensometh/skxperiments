@@ -71,7 +71,9 @@ print(result.ate, result.p_value)
 For variance reduction with covariates, use `LinEstimator` (Lin 2013) or `CUPED` (Deng et al.
 2013). For blocked or factorial designs, use `BlockedCRD` + `BlockedDifferenceInMeans` or
 `FactorialDesign` + `FactorialEstimator`. For rerandomization on Mahalanobis distance,
-use `ReRandomizedCRD` (Morgan & Rubin 2012). `RandomizationTest` works with all of these
+use `ReRandomizedCRD` (Morgan & Rubin 2012). When whole groups (e.g., stores) are randomized
+but outcomes are recorded per individual (e.g., customers), use `ClusterDesign` +
+`ClusterDifferenceInMeans`. `RandomizationTest` works with all of these
 (except `FactorialAssignment` in v1). To control the family-wise error rate or false
 discovery rate when reporting multiple effects, wrap the result in
 `MultipleTestingCorrection`.
@@ -134,7 +136,7 @@ glossary and a "how to choose" guide, in [`docs/`](docs/README.md)
 | 6 | Pipeline (ExperimentPipeline, ExperimentComparison) | ✓ Complete |
 | 7 | Visualization and reporting (plots, ExperimentReport) | ✓ Complete |
 
-Test coverage: 720 tests, all passing on CI.
+Test coverage: 806 tests, all passing on CI.
 
 See [`ROADMAP.md`](ROADMAP.md) for deferred features and v2 plans, and `CHANGELOG.md` for the
 full history of changes.
@@ -147,6 +149,7 @@ full history of changes.
 - **`BlockedCRD`**: Independent randomization within blocks.
 - **`ReRandomizedCRD`**: Mahalanobis acceptance criterion with cached covariance matrix; loop with `max_attempts`.
 - **`FactorialDesign`**: 2^K factorial design with equal cell sizes; little-endian cell encoding.
+- **`ClusterDesign`**: Cluster-randomized adapter wrapping `CRD` or `BlockedCRD`: randomizes the unique-cluster population and propagates labels to individual rows (e.g., stores randomized, customers recorded).
 - **`check_balance(assignment, covariates)`**: Standardized mean differences (SMD), pooled std with `ddof=1`.
 - **`power_analysis(...)`**: Sample size, MDE, or power for two-sample mean comparisons.
 
@@ -154,6 +157,7 @@ full history of changes.
 
 - **`DifferenceInMeans`**: Simple ATE for `CRDAssignment`.
 - **`BlockedDifferenceInMeans`**: Size-weighted ATE for `BlockedAssignment`.
+- **`ClusterDifferenceInMeans`**: Cluster-level ATE for `ClusterAssignment`, with explicit estimand choice: `cluster_mean` (equal weight per cluster) or `exposure_weighted` (pre-specified exposure weights).
 - **`FactorialEstimator`**: All 2^K − 1 effects (main effects and interactions of all orders) for `FactorialAssignment`. Returns `Results` in multi-effect mode.
 - **`LinEstimator`**: Covariate-adjusted ATE via OLS with treatment-covariate interaction (Lin 2013).
 - **`CUPED`**: Variance reduction with a pre-experiment covariate (Deng et al. 2013).
@@ -165,10 +169,11 @@ intervals come from inference classes in `skxperiments.inference`.
 
 - **`RandomizationTest`**: Fisher's sharp null hypothesis test via Monte Carlo permutations.
   Uses `Assignment.draw()` to respect the original randomization mechanism (including
-  rerandomization Mahalanobis criterion and within-block proportions). P-value via the
+  rerandomization Mahalanobis criterion, within-block proportions, and whole-cluster
+  relabeling for `ClusterAssignment`). P-value via the
   Phipson & Smyth (2010) continuity correction. Three alternatives: `"two-sided"`,
   `"greater"`, `"less"`. Works with `DifferenceInMeans`, `BlockedDifferenceInMeans`,
-  `LinEstimator`, and `CUPED`.
+  `ClusterDifferenceInMeans`, `LinEstimator`, and `CUPED`.
 - **`MultipleTestingCorrection`**: Bonferroni, Holm (FWER) and Benjamini-Hochberg (FDR)
   correction over a family of p-values. Accepts a multi-effect `Results` (typical from
   `FactorialEstimator` after inference) or a list of scalar `Results` (for comparing

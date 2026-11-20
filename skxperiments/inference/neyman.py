@@ -20,6 +20,7 @@ from scipy.stats import norm
 
 from skxperiments.core.assignment import (
     BlockedAssignment,
+    ClusterAssignment,
     CRDAssignment,
 )
 from skxperiments.core.base import BaseEstimator, BaseInference
@@ -175,7 +176,10 @@ class NeymanCI(BaseInference):
         ------
         DesignEstimatorMismatch
             If ``assignment`` is not a ``CRDAssignment`` or
-            ``BlockedAssignment``.
+            ``BlockedAssignment``. ``ClusterAssignment`` is rejected
+            explicitly: the Neyman variance treats rows as independent
+            randomization units, which is false under cluster
+            randomization.
         InvalidDesignError
             If the estimator returns a multi-effect ``Results``
             (``Results.ate is None``; v1 supports only scalar estimands),
@@ -185,6 +189,18 @@ class NeymanCI(BaseInference):
             If any arm (CRD) or any arm within a block (blocked) has fewer
             than 2 observations, so the sample variance is undefined.
         """
+        if isinstance(assignment, ClusterAssignment):
+            raise DesignEstimatorMismatch(
+                estimator_name=type(self).__name__,
+                received_type="ClusterAssignment",
+                expected_type="CRDAssignment or BlockedAssignment",
+                suggestion=(
+                    "RandomizationTest (cluster-randomized designs "
+                    "support randomization-based inference only in v1; "
+                    "the Neyman variance would treat individuals as "
+                    "independent randomization units)"
+                ),
+            )
         self._validate_assignment_type(
             assignment, (CRDAssignment, BlockedAssignment)
         )

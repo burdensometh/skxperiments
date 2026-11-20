@@ -322,10 +322,16 @@ Items are grouped by phase. Each item lists:
   immediately for ignored paths.
 
 ### Cluster and geo randomization, and interference (SUTVA violations)
-- **What**: v1 assumes SUTVA and unit-level randomization. Cluster/geo designs
-  and interference-aware estimators are not covered.
-- **Why deferred**: needs cluster-level assignment, cluster-robust variance, and
-  an interference model; a sizable design + inference addition.
+- **What**: partially shipped. `ClusterDesign` + `ClusterAssignment` +
+  `ClusterDifferenceInMeans` cover cluster-randomized assignment
+  (CRD/blocked base) with cluster-mean or exposure-weighted estimands,
+  and `RandomizationTest` provides cluster-level randomization
+  inference (each draw relabels whole clusters). Still deferred:
+  cluster-robust variance / cluster bootstrap (`NeymanCI` and
+  `BootstrapCI` reject `ClusterAssignment` explicitly), geo designs,
+  and interference-aware estimators.
+- **Why deferred**: the remaining pieces need cluster-robust variance
+  estimators and an interference model; a sizable inference addition.
 - **Trigger**: marketplace/network experiments with spillover (Kohavi et al.).
 
 ### Delta method for ratio metrics

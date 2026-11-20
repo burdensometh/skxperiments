@@ -12,6 +12,7 @@ and diagnostics. When in doubt, start with the simplest option (`CRD` +
 | A known categorical that affects the outcome (region, device) | `BlockedCRD` |
 | Want guaranteed balance on continuous covariates | `ReRandomizedCRD` |
 | Testing several factors at once | `FactorialDesign` |
+| Randomization unit is a group (e.g. store), outcome recorded per individual (e.g. customer) | `ClusterDesign` (wrapping `CRD` or `BlockedCRD`) |
 
 ## 2. Which estimator?
 
@@ -22,6 +23,7 @@ and diagnostics. When in doubt, start with the simplest option (`CRD` +
 | CRD, with a pre-experiment metric | `CUPED` |
 | Blocked | `BlockedDifferenceInMeans` |
 | Factorial | `FactorialEstimator` |
+| Cluster-randomized | `ClusterDifferenceInMeans` (choose the estimand: `cluster_mean` or `exposure_weighted`) |
 
 ## 3. Which inference?
 
@@ -36,6 +38,11 @@ Note: in v1, `NeymanCI` covers `DifferenceInMeans` and
 `BlockedDifferenceInMeans`. To get an interval with `LinEstimator` or
 `CUPED`, use `BootstrapCI` (which accepts any scalar estimator) or
 `RandomizationTest`.
+
+Cluster-randomized assignments (`ClusterAssignment`) support
+`RandomizationTest` only in v1: each permutation relabels whole
+clusters. `NeymanCI` and `BootstrapCI` reject them explicitly — their
+variances would treat individuals as independent randomization units.
 
 ## 4. Always: diagnostics
 

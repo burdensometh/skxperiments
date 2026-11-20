@@ -593,3 +593,42 @@ class TestNeymanCICoverage:
         assert coverage >= 0.90, (
             f"Empirical coverage {coverage:.3f} below tolerance for blocked."
         )
+
+
+class TestNeymanCIClusterRejection:
+    """NeymanCI must explicitly reject ClusterAssignment: the Neyman
+    variance treats rows as independent randomization units, which is
+    false under cluster randomization."""
+
+    def _cluster_assignment(self) -> "object":
+        from skxperiments.design.cluster import ClusterDesign
+        from skxperiments.design.crd import CRD
+
+        rng = np.random.default_rng(0)
+        store_ids: list[str] = []
+        for i in range(10):
+            store_ids.extend([f"store_{i}"] * 5)
+        df = pd.DataFrame(
+            {"store_id": store_ids, "y": rng.normal(size=len(store_ids))}
+        )
+        design = ClusterDesign(
+            cluster_col="store_id", base_design=CRD(p=0.5, seed=0)
+        )
+        return design.randomize(df)
+
+    def test_fit_rejects_cluster_assignment(self) -> None:
+        """fit must raise DesignEstimatorMismatch for ClusterAssignment."""
+        assignment = self._cluster_assignment()
+        ci = NeymanCI(estimator=DifferenceInMeans(outcome_col="y"))
+        with pytest.raises(DesignEstimatorMismatch) as exc_info:
+            ci.fit(assignment)
+        assert "ClusterAssignment" in str(exc_info.value)
+
+    def test_rejection_suggests_randomization_test(self) -> None:
+        """The error must point to RandomizationTest as the supported
+        inference for cluster designs."""
+        assignment = self._cluster_assignment()
+        ci = NeymanCI(estimator=DifferenceInMeans(outcome_col="y"))
+        with pytest.raises(DesignEstimatorMismatch) as exc_info:
+            ci.fit(assignment)
+        assert "RandomizationTest" in str(exc_info.value)

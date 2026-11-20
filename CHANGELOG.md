@@ -7,6 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Cluster-randomized designs
+
+- **`ClusterDesign`** (`skxperiments.design.cluster`): adapter for
+  cluster-randomized experiments (e.g., stores randomized, outcomes
+  recorded per customer). Wraps a unit-level base design (`CRD` or
+  `BlockedCRD`), randomizes over the unique-cluster population, and
+  propagates the labels back to the individual rows via
+  `cluster_col`. For a blocked base design, every cluster must belong
+  to exactly one block. `ReRandomizedCRD` and `FactorialDesign` base
+  designs are rejected in v1.
+- **`ClusterAssignment`** (`skxperiments.core.assignment`): carries the
+  individual-level data with the cluster-level labels (within-cluster
+  unit identity is preserved — one row per individual) and validates
+  that treatment is constant within each cluster. Exposes
+  `n_clusters_`, `n_clusters_treated_`, `n_clusters_control_`,
+  `cluster_sizes_`, and `treated_cluster_labels()` /
+  `control_cluster_labels()`; the inherited `n_units_` / `n_treated_`
+  / `n_control_` keep counting individuals. `draw()` re-randomizes
+  **whole clusters** through the generating design and re-propagates
+  labels to the same individuals, so randomization inference never
+  relabels individuals independently.
+- **`ClusterDifferenceInMeans`** (`skxperiments.estimators`):
+  difference-in-means at the cluster level with an explicit estimand
+  choice: `estimand="cluster_mean"` (equal weight per cluster) or
+  `estimand="exposure_weighted"` (cluster means weighted by a
+  pre-specified exposure column, validated to be constant within
+  cluster and non-negative). Its `Results` reports individual-level
+  `n_obs` / `n_treated` / `n_control` and the cluster counts in
+  `extra` (`n_clusters`, `n_clusters_treated`, `n_clusters_control`,
+  `estimand`) — the cluster count is never silently swapped into
+  `n_obs`.
+- **`RandomizationTest` accepts `ClusterAssignment`**: each
+  permutation relabels whole clusters via `ClusterAssignment.draw()`,
+  and the cluster-level `extra` keys are propagated to the final
+  `Results`.
+- **Explicit rejection elsewhere**: `NeymanCI` and `BootstrapCI`
+  raise `DesignEstimatorMismatch` with a pointer to `RandomizationTest`
+  when fitted on a `ClusterAssignment` (their variances would treat
+  individuals as independent randomization units);
+  `DifferenceInMeans` and `BlockedDifferenceInMeans` point to
+  `ClusterDifferenceInMeans`.
+
 ### Packaging
 
 - Published `0.1.0.dev0` to PyPI as a developmental pre-release

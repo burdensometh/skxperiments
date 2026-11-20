@@ -7,9 +7,12 @@ outcome variable.
 
 import pandas as pd
 
-from skxperiments.core.assignment import CRDAssignment
+from skxperiments.core.assignment import ClusterAssignment, CRDAssignment
 from skxperiments.core.base import BaseEstimator
-from skxperiments.core.exceptions import InvalidDesignError
+from skxperiments.core.exceptions import (
+    DesignEstimatorMismatch,
+    InvalidDesignError,
+)
 from skxperiments.core.results import Results
 
 
@@ -88,11 +91,21 @@ class DifferenceInMeans(BaseEstimator):
         DesignEstimatorMismatch
             If ``assignment`` is not a ``CRDAssignment`` (in particular,
             ``BlockedAssignment`` and ``FactorialAssignment`` are
-            rejected).
+            rejected). ``ClusterAssignment`` is rejected with a pointer
+            to ``ClusterDifferenceInMeans``: comparing raw individual
+            means would treat individuals as independent randomization
+            units.
         InvalidDesignError
             If ``outcome_col`` is missing from ``assignment.data_``,
             is not numeric, or contains NaN values.
         """
+        if isinstance(assignment, ClusterAssignment):
+            raise DesignEstimatorMismatch(
+                estimator_name=type(self).__name__,
+                received_type="ClusterAssignment",
+                expected_type="CRDAssignment",
+                suggestion="ClusterDifferenceInMeans",
+            )
         self._validate_assignment_type(assignment, CRDAssignment)
 
         data = assignment.data_

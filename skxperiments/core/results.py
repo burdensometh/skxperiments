@@ -92,6 +92,16 @@ class Results:
       ``Cov(Y, X_pre) / Var(X_pre)``.
     - ``"correlation"`` : float. Pearson correlation between outcome
       and pre-period covariate, written by ``CUPED``.
+    - ``"estimand"`` : str, ``"cluster_mean"`` or
+      ``"exposure_weighted"``. Estimand selector written by
+      ``ClusterDifferenceInMeans``.
+    - ``"n_clusters"``, ``"n_clusters_treated"``,
+      ``"n_clusters_control"`` : int. Cluster counts written by
+      cluster-aware estimators. The top-level ``n_obs`` /
+      ``n_treated`` / ``n_control`` remain individual-level; the
+      cluster counts (the actual randomization units) travel here —
+      neither is substituted for the other. Propagated by
+      ``RandomizationTest``.
 
     *Written by inference classes (Phase 4):*
 
