@@ -194,6 +194,33 @@ Items are grouped by phase. Each item lists:
   the standard.
 - **Trigger**: User request with citation.
 
+### Step-down maxT for `MaxStatCorrection`
+
+- **What**: `MaxStatCorrection` (shipped with
+  `MultiOutcomeRandomizationTest`) implements single-step maxT. The free
+  step-down variant (Westfall & Young's step-down maxT) orders hypotheses
+  by observed statistic and adjusts against successive maxima of the
+  remaining subsets — uniformly more powerful, still exact FWER control
+  under the joint null.
+- **Why deferred**: Single-step is the canonical max-stat correction and
+  keeps the first release of joint multi-outcome inference small. The
+  joint null distribution is already exposed on `MultiOutcomeResult`, so
+  step-down is a pure post-processing addition.
+- **Trigger**: User reports of power loss when screening many outcomes.
+
+### `RandomizationPlan` fingerprint cost
+
+- **What**: `RandomizationPlan.assignment()` re-verifies the population
+  and design-version fingerprints on every draw (a full
+  `hash_pandas_object` of the bound data), roughly doubling draw cost
+  relative to a bare `Assignment.draw()`.
+- **Why deferred**: The binding guarantee is the point of the plan —
+  skipping verification reopens the silent population-drift bug the plan
+  exists to close. Estimator refits dominate real workloads.
+- **Trigger**: Profiling showing plan verification dominates a real
+  multi-outcome workload. Candidate fix: a cheaper numeric fast-path
+  fingerprint for all-numeric frames.
+
 ### `SequentialTest` (mSPRT, always-valid intervals)
 
 - **What**: Originally planned as Phase 4.5; **deferred to v2** (decided

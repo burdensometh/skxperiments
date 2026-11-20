@@ -122,13 +122,18 @@ class Results:
     True
 
     *Written by inference classes (Phase 4.2):*
-    
+
         - ``"correction_method"`` : str, ``"bonferroni"``, ``"holm"``, or
           ``"bh"``. The multiple-testing correction applied by
-          ``MultipleTestingCorrection``.
+          ``MultipleTestingCorrection``. ``MultiOutcomeRandomizationTest``
+          writes ``"max_stat"`` here for its joint max-statistic
+          adjustment; the key is shared so a second correction (of either
+          kind) is refused.
         - ``"original_p_values"`` : dict or list. The uncorrected p-values
           before applying the correction. Same structure as the corrected
           ``p_value``: dict in multi-effect mode, list in scalar-list mode.
+          ``MultiOutcomeRandomizationTest`` writes a dict mapping outcome
+          name to raw p-value.
         - ``"family_wise_alpha"`` : float. The family-wise alpha used by
           ``MultipleTestingCorrection``.
         - ``"n_tests"`` : int. The size of the testing family.

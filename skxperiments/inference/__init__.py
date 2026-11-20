@@ -1,17 +1,26 @@
 """Inference module for hypothesis testing and confidence intervals.
 
 Phase 4: randomization-based inference, multiple testing correction,
-Neyman variance, bootstrap.
+Neyman variance, bootstrap. Joint multi-outcome randomization inference
+on a shared randomization plan.
 """
 
 from skxperiments.inference.bootstrap import BootstrapCI
 from skxperiments.inference.multiple import MultipleTestingCorrection
+from skxperiments.inference.multioutcome import (
+    MaxStatCorrection,
+    MultiOutcomeRandomizationTest,
+    MultiOutcomeResult,
+)
 from skxperiments.inference.neyman import NeymanCI
 from skxperiments.inference.randomization_test import RandomizationTest
 
 __all__ = [
     "BootstrapCI",
+    "MaxStatCorrection",
     "MultipleTestingCorrection",
+    "MultiOutcomeRandomizationTest",
+    "MultiOutcomeResult",
     "NeymanCI",
     "RandomizationTest",
 ]

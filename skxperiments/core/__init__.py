@@ -17,6 +17,7 @@ from skxperiments.core.exceptions import (
 )
 from skxperiments.core.potential_outcomes import PotentialOutcomes
 from skxperiments.core.assignment import BaseAssignment, CRDAssignment
+from skxperiments.core.plan import RandomizationPlan
 from skxperiments.core.results import Results
 from skxperiments.core.base import (
     BaseDesign,
@@ -34,6 +35,7 @@ __all__ = [
     "PotentialOutcomes",
     "BaseAssignment",
     "CRDAssignment",
+    "RandomizationPlan",
     "Results",
     "BaseDesign",
     "BaseEstimator",

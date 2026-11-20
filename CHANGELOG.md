@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Joint multi-outcome randomization inference
+
+- **`RandomizationPlan`** (`skxperiments.core.plan`): a shared
+  randomization plan bound to one Assignment population and one design
+  version. Both are fingerprinted at construction and re-verified on
+  every draw — mutating the bound assignment's data or the design's
+  mechanism parameters invalidates the plan instead of silently drawing
+  from a different population. Generates the complete assignment of each
+  replicate by `replicate_id` (one pre-generated seed per replicate), so
+  several outcome estimators can be refit on the *same* simulated world
+  rather than drawing independently from per-metric seeds.
+- **`MultiOutcomeRandomizationTest`**
+  (`skxperiments.inference.multioutcome`): joint Fisher randomization
+  test across multiple outcome variables of one experiment. Every
+  outcome estimator is refit on the same shared replicate, preserving
+  the joint null distribution across outcomes. Estimators are
+  deep-copied at construction, so each outcome's mutable state is
+  isolated and the caller's instances are never fitted. The common
+  population is validated before any draw: a missing or NaN outcome
+  column raises with guidance to define one complete-case population
+  first, instead of letting each metric drop its own rows.
+- **`MaxStatCorrection`** (`skxperiments.inference.multioutcome`):
+  single-step maxT adjustment (Westfall & Young, 1993) computed from the
+  joint simulated null — the dependence-aware alternative to sorted-p
+  corrections (Bonferroni/Holm/BH). `estimate()` returns a
+  **`MultiOutcomeResult`** bundling the raw per-outcome `Results`
+  (unadjusted, still compatible with `MultipleTestingCorrection`), the
+  max-stat-adjusted `Results` (raw p-values preserved in
+  `extra["original_p_values"]`), the joint null matrix, and a
+  per-outcome table.
+
 ### Packaging
 
 - Published `0.1.0.dev0` to PyPI as a developmental pre-release
