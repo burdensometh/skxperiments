@@ -114,12 +114,22 @@ class TestCUPEDInitValidation:
             CUPED(outcome_col="", pre_experiment_col="y_pre")
 
     def test_pre_experiment_col_non_string_raises(self) -> None:
-        """Non-string pre_experiment_col must raise."""
+        """A non-string, non-None pre_experiment_col must raise."""
         with pytest.raises(InvalidDesignError, match="pre_experiment_col"):
             CUPED(
                 outcome_col="y",
-                pre_experiment_col=None,  # type: ignore[arg-type]
+                pre_experiment_col=42,  # type: ignore[arg-type]
             )
+
+    def test_pre_experiment_col_none_allowed_for_frozen_table(self) -> None:
+        """None is allowed at construction; it resolves at fit time.
+
+        CUPED then requires the assignment to carry a frozen covariate
+        table (see ``_resolve_pre_experiment_col``). Without one, fit
+        raises rather than guessing a column.
+        """
+        estimator = CUPED(outcome_col="y", pre_experiment_col=None)
+        assert estimator.pre_experiment_col is None
 
     def test_pre_experiment_col_empty_raises(self) -> None:
         """Empty pre_experiment_col must raise."""

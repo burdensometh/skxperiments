@@ -23,6 +23,35 @@ and diagnostics. When in doubt, start with the simplest option (`CRD` +
 | Blocked | `BlockedDifferenceInMeans` |
 | Factorial | `FactorialEstimator` |
 
+Covariates for `ReRandomizedCRD`, `LinEstimator` and `CUPED` must be
+known **before** assignment. Do not join a latest-snapshot table at
+analysis time; build a frozen table with `PointInTimeCovariates` and
+pass it on:
+
+```python
+from skxperiments.covariates import CovariateSpec, PointInTimeCovariates
+
+frame = PointInTimeCovariates(
+    unit_col="unit_id",
+    event_time_col="event_at",
+    arrival_time_col="arrived_at",   # what was knowable at the cutoff
+    cutoff_col="assigned_at",
+    specs=[CovariateSpec("spend_7d", column="spend", agg="sum",
+                         role=["balance", "adjustment"])],
+    window="7D",
+    fillna=0.0,
+).build(units, history)
+
+df = frame.attach(units)                 # join frozen values by unit id
+assignment = ReRandomizedCRD(threshold=..., p=0.5).randomize(
+    df, frozen_covariates=frame
+)
+```
+
+The estimators can then select the covariate by role
+(`LinEstimator(outcome_col="y")`, `CUPED(outcome_col="y")`) and the
+frozen fingerprint travels into the results.
+
 ## 3. Which inference?
 
 | I want... | Use |

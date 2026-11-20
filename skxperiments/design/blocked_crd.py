@@ -6,6 +6,8 @@ pre-experiment covariates that define meaningful subgroups (e.g.,
 geography, device type) where balance must be guaranteed.
 """
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -72,7 +74,12 @@ class BlockedCRD(BaseDesign):
         self.seed = seed
         self.treatment_col = treatment_col
 
-    def randomize(self, df: pd.DataFrame) -> BlockedAssignment:
+    def randomize(
+        self,
+        df: pd.DataFrame,
+        *,
+        frozen_covariates: Any = None,
+    ) -> BlockedAssignment:
         """Perform blocked randomization and return a BlockedAssignment.
 
         Parameters
@@ -80,6 +87,12 @@ class BlockedCRD(BaseDesign):
         df : pd.DataFrame
             DataFrame containing the experimental units. Must contain
             ``block_col`` and must not contain ``treatment_col``.
+
+        Other Parameters
+        ----------------
+        frozen_covariates : CovariateFrame or None, optional
+            Frozen point-in-time covariate table carried on the
+            assignment and verified against ``df``.
 
         Returns
         -------
@@ -154,4 +167,5 @@ class BlockedCRD(BaseDesign):
             block_col=self.block_col,
             block_sizes=block_sizes,
             seed=self.seed,
+            frozen_covariates=frozen_covariates,
         )

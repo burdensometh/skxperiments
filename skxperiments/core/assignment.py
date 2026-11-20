@@ -37,6 +37,12 @@ class BaseAssignment(ABC):
         Name of the treatment column.
     design : Any
         Reference to the design that generated this assignment.
+    frozen_covariates : CovariateFrame or None, optional
+        Frozen point-in-time covariate table used as the design feature
+        (rerandomization criterion, balance diagnostics, adjustment).
+        When present, ``data_`` must contain the frozen values and every
+        ``draw()`` carries the same table forward, so the design feature
+        cannot drift as post-assignment data is appended.
 
     Attributes
     ----------
@@ -46,6 +52,12 @@ class BaseAssignment(ABC):
         Name of the treatment column.
     design_ : Any
         Reference to the generating design.
+    frozen_covariates_ : CovariateFrame or None
+        Frozen covariate table, or None for a plain assignment.
+    covariate_metadata_ : dict or None
+        Roles, windows, fill rules, cutoff/history versions and
+        fingerprint of the frozen table. Carried into results so the
+        design feature is auditable.
     n_units_ : int
         Total number of units.
     n_treated_ : int
@@ -59,19 +71,58 @@ class BaseAssignment(ABC):
         data: pd.DataFrame,
         treatment_col: str,
         design: Any,
+        frozen_covariates: Any = None,
     ) -> None:
         if treatment_col not in data.columns:
             raise InvalidDesignError(
                 f"Treatment column '{treatment_col}' not found in DataFrame. "
                 f"Available columns: {list(data.columns)}."
             )
-    
+
+        if frozen_covariates is not None:
+            # The design feature travels with the assignment. Fail loudly
+            # if ``data`` carries a different value under the same name
+            # (e.g., a latest snapshot joined next to the frozen one).
+            frozen_covariates.assert_unchanged(data)
+
         self.data_: pd.DataFrame = data
         self.treatment_col_: str = treatment_col
         self.design_: Any = design
+        self.frozen_covariates_: Any = frozen_covariates
+        self.covariate_metadata_: dict | None = (
+            None
+            if frozen_covariates is None
+            else frozen_covariates.metadata()
+        )
         self.n_units_: int = len(data)
         self.n_treated_: int = int((data[treatment_col] == 1).sum())
         self.n_control_: int = int((data[treatment_col] == 0).sum())
+
+    def verify_frozen_covariates(
+        self, data: pd.DataFrame | None = None
+    ) -> None:
+        """Check that the frozen covariate values were not altered.
+
+        Parameters
+        ----------
+        data : pd.DataFrame or None, optional
+            DataFrame to check. Defaults to ``self.data_``.
+
+        Raises
+        ------
+        FrozenCovariateViolation
+            If a covariate is missing or its values changed. Appending
+            new *columns* (outcomes, post-assignment metrics) is fine;
+            rewriting the frozen columns is not.
+        InvalidDesignError
+            If this assignment has no frozen covariate table.
+        """
+        if self.frozen_covariates_ is None:
+            raise InvalidDesignError(
+                "This assignment has no frozen covariate table to verify."
+            )
+        target = self.data_ if data is None else data
+        self.frozen_covariates_.assert_unchanged(target)
 
     def _validate_treatment_col(self) -> None:
         """Validate that the treatment column contains only 0 and 1.
@@ -181,6 +232,10 @@ class CRDAssignment(BaseAssignment):
         - ``"scaling_factor"``: float (1/n_treated + 1/n_control)
 
         When None, this is a plain CRD assignment.
+    frozen_covariates : CovariateFrame or None, optional
+        Frozen point-in-time covariate table used as the design feature.
+        ``draw()`` carries it forward unchanged so every permutation
+        uses the same frozen values. By default None.
 
     Attributes
     ----------
@@ -208,8 +263,14 @@ class CRDAssignment(BaseAssignment):
         design: Any,
         seed: int | None = None,
         rerandomization_metadata: dict | None = None,
+        frozen_covariates: Any = None,
     ) -> None:
-        super().__init__(data=data, treatment_col=treatment_col, design=design)
+        super().__init__(
+            data=data,
+            treatment_col=treatment_col,
+            design=design,
+            frozen_covariates=frozen_covariates,
+        )
         self.seed_: int | None = seed
         self.rerandomization_metadata: dict | None = rerandomization_metadata
         self._validate_treatment_col()
@@ -261,13 +322,17 @@ class CRDAssignment(BaseAssignment):
                 df=df_clean,
                 cov_matrix=cov_matrix,
                 rng=rng,
+                frozen_covariates=self.frozen_covariates_,
+                covariates=list(self.rerandomization_metadata["covariates"]),
             )
 
         # Plain CRD: delegate to design.randomize via temporary seed override.
         original_seed = getattr(self.design_, "seed", None)
         try:
             self.design_.seed = seed
-            return self.design_.randomize(df_clean)
+            return self.design_.randomize(
+                df_clean, frozen_covariates=self.frozen_covariates_
+            )
         finally:
             self.design_.seed = original_seed
 
@@ -317,8 +382,14 @@ class BlockedAssignment(BaseAssignment):
         block_col: str,
         block_sizes: dict,
         seed: int | None = None,
+        frozen_covariates: Any = None,
     ) -> None:
-        super().__init__(data=data, treatment_col=treatment_col, design=design)
+        super().__init__(
+            data=data,
+            treatment_col=treatment_col,
+            design=design,
+            frozen_covariates=frozen_covariates,
+        )
         if block_col not in data.columns:
             raise InvalidDesignError(
                 f"Block column '{block_col}' not found in DataFrame. "
@@ -371,7 +442,9 @@ class BlockedAssignment(BaseAssignment):
         original_seed = getattr(self.design_, "seed", None)
         try:
             self.design_.seed = seed
-            return self.design_.randomize(df_clean)
+            return self.design_.randomize(
+                df_clean, frozen_covariates=self.frozen_covariates_
+            )
         finally:
             self.design_.seed = original_seed
 
@@ -443,11 +516,17 @@ class FactorialAssignment(BaseAssignment):
         factor_cols: list[str],
         cell_sizes: dict,
         seed: int | None = None,
+        frozen_covariates: Any = None,
     ) -> None:
         # Pass "_cell" as treatment_col to satisfy BaseAssignment's
         # interface, but do NOT validate it against {0, 1}: see
         # class docstring.
-        super().__init__(data=data, treatment_col="_cell", design=design)
+        super().__init__(
+            data=data,
+            treatment_col="_cell",
+            design=design,
+            frozen_covariates=frozen_covariates,
+        )
         # Override the binary-coded n_treated_ / n_control_ set by
         # BaseAssignment; they are not meaningful here.
         self.n_treated_ = 0
@@ -584,6 +663,8 @@ class FactorialAssignment(BaseAssignment):
         original_seed = getattr(self.design_, "seed", None)
         try:
             self.design_.seed = seed
-            return self.design_.randomize(df_clean)
+            return self.design_.randomize(
+                df_clean, frozen_covariates=self.frozen_covariates_
+            )
         finally:
             self.design_.seed = original_seed

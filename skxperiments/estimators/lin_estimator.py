@@ -21,6 +21,7 @@ from skxperiments.core.assignment import (
 from skxperiments.core.base import BaseEstimator
 from skxperiments.core.exceptions import InvalidDesignError
 from skxperiments.core.results import Results
+from skxperiments.covariates.frame import resolve_covariates
 
 
 class LinEstimator(BaseEstimator):
@@ -50,9 +51,17 @@ class LinEstimator(BaseEstimator):
     ----------
     outcome_col : str
         Name of the outcome column in ``assignment.data_``.
-    covariates : list of str
-        Names of covariate columns. Must be a non-empty list of
-        strings. For unadjusted ATE, use ``DifferenceInMeans``.
+    covariates : list of str or None, optional
+        Names of covariate columns. Must be a non-empty list of strings,
+        or None to select the covariates carrying ``covariate_roles``
+        from the assignment's frozen point-in-time table. For unadjusted
+        ATE, use ``DifferenceInMeans``.
+    covariate_roles : str or sequence of str, optional
+        Roles used to select covariates from the frozen table when
+        ``covariates`` is None. Default ``("adjustment",)``. The design
+        variables a rerandomization criterion used are usually declared
+        with role ``"adjustment"`` as well; name them explicitly if they
+        are not.
     inference_mode : {"finite_population", "superpopulation"}, optional
         Documentational flag propagated to ``Results.extra``. The
         Phase 4 inference class reads this to pick a variance
@@ -64,6 +73,13 @@ class LinEstimator(BaseEstimator):
         The fitted assignment.
     ate_ : float
         Lin-adjusted point estimate of the ATE.
+    covariates_ : list of str
+        The covariates actually used (resolved at fit time when they
+        came from the frozen table).
+    covariate_metadata_ : dict or None
+        Frozen table metadata (roles, windows, fill rule, cutoff and
+        history versions, fingerprint) when covariates came from a
+        frozen table. Propagated to ``Results.extra``.
     coefficients_ : np.ndarray
         Full vector of OLS coefficients with shape ``(2 + 2*K,)``,
         where K is the number of covariates. Layout:
@@ -93,6 +109,16 @@ class LinEstimator(BaseEstimator):
     Constant covariates (zero variance) make the design matrix
     singular and are rejected at ``fit``.
 
+    When the assignment carries ``frozen_covariates_``, the adjustment
+    covariates are read from the frozen point-in-time table: with
+    ``covariates=None`` they are selected by role; with explicit names
+    each must be a frozen covariate (otherwise the fit raises), and the
+    frozen values are verified unchanged before adjusting. A column that
+    is not in the frozen table (even if it looks pre-period) is not
+    accepted on such an assignment — build it into the table so it
+    carries a cutoff and a fingerprint. Assignments without a frozen
+    table keep the plain DataFrame behaviour.
+
     Examples
     --------
     >>> from skxperiments.design.crd import CRD
@@ -111,26 +137,42 @@ class LinEstimator(BaseEstimator):
     def __init__(
         self,
         outcome_col: str,
-        covariates: list[str],
+        covariates: list[str] | None = None,
         inference_mode: str = "finite_population",
+        covariate_roles: str | tuple[str, ...] = "adjustment",
     ) -> None:
         # Validate covariates
-        if not isinstance(covariates, list):
-            raise InvalidDesignError(
-                f"covariates must be a list of strings, but received "
-                f"{type(covariates).__name__}."
-            )
-        if len(covariates) == 0:
-            raise InvalidDesignError(
-                "LinEstimator requires at least one covariate; use "
-                "DifferenceInMeans for unadjusted ATE."
-            )
-        for c in covariates:
-            if not isinstance(c, str):
+        if covariates is not None:
+            if not isinstance(covariates, list):
                 raise InvalidDesignError(
-                    f"covariates must be a list of strings; found "
-                    f"element of type {type(c).__name__}: {c!r}."
+                    f"covariates must be a list of strings or None, but "
+                    f"received {type(covariates).__name__}."
                 )
+            if len(covariates) == 0:
+                raise InvalidDesignError(
+                    "LinEstimator requires at least one covariate; use "
+                    "DifferenceInMeans for unadjusted ATE. Pass "
+                    "covariates=None to select them from a frozen "
+                    "covariate table by role."
+                )
+            for c in covariates:
+                if not isinstance(c, str):
+                    raise InvalidDesignError(
+                        f"covariates must be a list of strings; found "
+                        f"element of type {type(c).__name__}: {c!r}."
+                    )
+
+        if isinstance(covariate_roles, str):
+            roles: tuple[str, ...] = (covariate_roles,)
+        elif isinstance(covariate_roles, (tuple, list)) and len(
+            covariate_roles
+        ) > 0:
+            roles = tuple(covariate_roles)
+        else:
+            raise InvalidDesignError(
+                "covariate_roles must be a role or a non-empty sequence "
+                "of roles."
+            )
 
         # Validate inference_mode
         if inference_mode not in self._VALID_INFERENCE_MODES:
@@ -143,6 +185,7 @@ class LinEstimator(BaseEstimator):
         self.outcome_col = outcome_col
         self.covariates = covariates
         self.inference_mode = inference_mode
+        self.covariate_roles = roles
 
     def fit(
         self, assignment: CRDAssignment | BlockedAssignment
@@ -167,13 +210,38 @@ class LinEstimator(BaseEstimator):
         InvalidDesignError
             If ``outcome_col`` is missing, non-numeric, or has NaN;
             if any covariate is missing, non-numeric, has NaN, or is
-            constant (zero variance).
+            constant (zero variance); or if ``covariates`` is None and
+            the frozen table declares no adjustment covariate.
+        FrozenCovariateViolation
+            If the assignment's frozen covariates changed after design.
         """
         self._validate_assignment_type(
             assignment, (CRDAssignment, BlockedAssignment)
         )
 
         data = assignment.data_
+        frozen = getattr(assignment, "frozen_covariates_", None)
+        if frozen is not None:
+            # The covariates are the design feature: confirm they were
+            # not replaced by a newer snapshot before adjusting.
+            frozen.assert_unchanged(data)
+
+        if self.covariates is not None:
+            # With a frozen table present, explicit names must be frozen
+            # covariates: an unfrozen column is exactly the latest
+            # snapshot that must not enter the design feature.
+            covariates = resolve_covariates(assignment, self.covariates)
+        else:
+            covariates = resolve_covariates(
+                assignment, None, roles=self.covariate_roles
+            )
+            if not covariates:
+                raise InvalidDesignError(
+                    "LinEstimator was declared without covariates, so it "
+                    "needs an assignment carrying a frozen point-in-time "
+                    "covariate table to select them by role. Pass "
+                    "covariates explicitly for a plain DataFrame."
+                )
 
         # Validate outcome
         if self.outcome_col not in data.columns:
@@ -196,7 +264,7 @@ class LinEstimator(BaseEstimator):
             )
 
         # Validate covariates
-        missing = [c for c in self.covariates if c not in data.columns]
+        missing = [c for c in covariates if c not in data.columns]
         if missing:
             raise InvalidDesignError(
                 f"Covariates not found in assignment.data_: {missing}. "
@@ -204,7 +272,7 @@ class LinEstimator(BaseEstimator):
             )
 
         non_numeric = [
-            c for c in self.covariates
+            c for c in covariates
             if not pd.api.types.is_numeric_dtype(data[c])
         ]
         if non_numeric:
@@ -212,7 +280,7 @@ class LinEstimator(BaseEstimator):
                 f"Covariates must be numeric: {non_numeric} are not."
             )
 
-        with_nan = [c for c in self.covariates if data[c].isna().any()]
+        with_nan = [c for c in covariates if data[c].isna().any()]
         if with_nan:
             raise InvalidDesignError(
                 f"Covariates contain NaN values: {with_nan}. "
@@ -220,7 +288,7 @@ class LinEstimator(BaseEstimator):
             )
 
         constants = [
-            c for c in self.covariates
+            c for c in covariates
             if data[c].var(ddof=0) == 0
         ]
         if constants:
@@ -231,7 +299,7 @@ class LinEstimator(BaseEstimator):
             )
 
         # Build the Lin design matrix.
-        X = data[self.covariates].values.astype(float)
+        X = data[covariates].values.astype(float)
         X_centered = X - X.mean(axis=0)
 
         T = (
@@ -256,6 +324,10 @@ class LinEstimator(BaseEstimator):
         # Layout: [intercept, T, X_centered (K), T*X_centered (K)].
         # coefficients[1] is the ATE.
         self.assignment_: CRDAssignment | BlockedAssignment = assignment
+        self.covariates_: list[str] = list(covariates)
+        self.covariate_metadata_: dict | None = (
+            None if frozen is None else frozen.metadata()
+        )
         self.ate_: float = float(coefficients[1])
         self.coefficients_: np.ndarray = coefficients
         self.inference_mode_: str = self.inference_mode
@@ -270,9 +342,10 @@ class LinEstimator(BaseEstimator):
         Results
             Results with ``ate``, ``n_obs``, ``n_treated``, ``n_control``,
             ``estimator_name``, ``design_name`` populated, and
-            ``extra={"inference_mode": <value>}`` propagated.
-            ``se``, ``ci``, ``p_value`` are ``None`` — inference is
-            Phase 4.
+            ``extra`` carrying ``inference_mode``, the resolved
+            ``covariates``, and (when covariates came from a frozen
+            point-in-time table) ``covariate_metadata``. ``se``, ``ci``,
+            ``p_value`` are ``None`` — inference is Phase 4.
 
         Raises
         ------
@@ -287,6 +360,13 @@ class LinEstimator(BaseEstimator):
         else:
             design_name = None
 
+        extra: dict = {
+            "inference_mode": self.inference_mode_,
+            "covariates": list(self.covariates_),
+        }
+        if self.covariate_metadata_ is not None:
+            extra["covariate_metadata"] = self.covariate_metadata_
+
         return Results(
             ate=self.ate_,
             n_obs=self.assignment_.n_units_,
@@ -294,5 +374,5 @@ class LinEstimator(BaseEstimator):
             n_control=self.assignment_.n_control_,
             estimator_name=type(self).__name__,
             design_name=design_name,
-            extra={"inference_mode": self.inference_mode_},
+            extra=extra,
         )

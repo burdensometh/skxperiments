@@ -7,6 +7,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Point-in-time covariates (design feature)
+
+- **`PointInTimeCovariates`** (`skxperiments.covariates`): builds a
+  **frozen** covariate table from an event history, keyed by `unit_col`
+  and a per-unit assignment cutoff (`cutoff_col` or a single `cutoff`).
+  A row is visible only when `event_time <= cutoff` **and**
+  `arrival_time <= cutoff`; rows that happened before the cutoff but
+  arrived afterwards (the look-ahead case a "latest snapshot" join
+  leaks) are excluded and counted in `n_invisible_rows`. Eligible rows
+  are reduced per unit either by an aggregation over a declared
+  lookback window (`strategy="aggregate"`, `CovariateSpec(agg=...)`) or
+  by taking the last visible value (`strategy="last_visible"`). Windows
+  are relative to each unit's cutoff.
+- **`CovariateSpec`**: declarative `name` / `column` / `agg` / `window`
+  / `role`. Roles (`balance`, `adjustment`, `blocking`,
+  `descriptive`) let designs, diagnostics, and estimators select the
+  covariates they need without re-listing names.
+- **Frozen fill rule**: units with no eligible history receive a
+  declared `fillna` value (scalar or per-covariate) recorded in
+  `CovariateFrame.fill_rules`; `filled_counts` reports how many units
+  were filled.
+- **`CovariateFrame`**: the frozen table. `attach(df)` joins it by unit
+  id and **refuses a same-named column with different values** (the
+  "pre-prefix but still latest-snapshot" mistake). `fingerprint()` /
+  `assert_unchanged()` detect any later change, so appending
+  post-assignment history or re-joining a newer snapshot raises
+  `FrozenCovariateViolation` instead of silently redefining the design.
+  `metadata()` records specs, roles, windows, fill rules, cutoff and
+  history versions, and the fingerprint.
+- **`FrozenCovariateViolation`** (`skxperiments.core.exceptions`): raised
+  when a frozen covariate table changed after it was built.
+
+### Changed — designs, diagnostics, estimators consume frozen covariates
+
+- **`Assignment`** constructors accept `frozen_covariates`; the table
+  (and its metadata) travels with every `draw()`, so
+  `RandomizationTest` permutations reuse the same frozen values.
+  `BaseAssignment.verify_frozen_covariates()` and the
+  `frozen_covariates_` / `covariate_metadata_` attributes expose it.
+  Adding new columns (outcomes, post metrics) is allowed; rewriting the
+  frozen columns is not.
+- **`ReRandomizedCRD`**: `covariates` is now optional; with
+  `covariate_roles` (default `"balance"`) the Mahalanobis criterion is
+  selected from the frozen table at `randomize` time and recorded in
+  `rerandomization_metadata["covariates"]`. The criterion is verified
+  against the frozen values.
+- **`check_balance` / `BalanceReport`**: with no explicit covariates, a
+  frozen-table assignment is checked on the declared covariates instead
+  of every numeric column (which would include post-assignment
+  metrics). `BalanceResult.covariate_metadata` records the design
+  feature used.
+- **`CUPED` / `LinEstimator`**: `pre_experiment_col` / `covariates` may
+  be omitted and resolved by role from the frozen table; the covariate
+  is verified against the frozen values before adjusting, and
+  `Results.extra` carries `covariate_metadata`, `pre_experiment_col`,
+  and `covariates`. Naming a column outside the frozen table is
+  rejected.
+- **`ExperimentPipeline`**: verifies the frozen covariates before
+  running and records `PipelineResult.covariate_metadata`.
+
 ### Packaging
 
 - Published `0.1.0.dev0` to PyPI as a developmental pre-release

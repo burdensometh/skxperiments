@@ -38,6 +38,11 @@ class BalanceResult:
     threshold : float
         Absolute-SMD threshold above which a covariate is considered
         imbalanced.
+    covariate_metadata : dict or None, optional
+        Frozen point-in-time metadata (roles, windows, fill rules,
+        cutoff/history versions, fingerprint) when the balance was
+        computed on an assignment carrying a frozen covariate table.
+        Recorded so the balance claim is tied to the design feature.
 
     Notes
     -----
@@ -48,6 +53,7 @@ class BalanceResult:
 
     table: pd.DataFrame
     threshold: float
+    covariate_metadata: dict | None = None
 
     @property
     def smd(self) -> dict:
@@ -149,8 +155,10 @@ class BalanceReport:
     Parameters
     ----------
     covariates : list of str or None, optional
-        Covariates to check. If None, all numeric columns except the
-        treatment column are used (see ``check_balance``). By default None.
+        Covariates to check. If None and the assignment carries a frozen
+        point-in-time covariate table, the declared covariates are used
+        (see ``check_balance``); otherwise all numeric columns except
+        the treatment column are used. By default None.
     threshold : float, optional
         Absolute-SMD threshold for flagging imbalance, by default 0.1
         (Austin 2009). Must be positive (SMDs are unbounded, so no upper
@@ -221,4 +229,11 @@ class BalanceReport:
             )
 
         table = check_balance(assignment, self.covariates)
-        return BalanceResult(table=table, threshold=self.threshold)
+        frozen = getattr(assignment, "frozen_covariates_", None)
+        return BalanceResult(
+            table=table,
+            threshold=self.threshold,
+            covariate_metadata=(
+                None if frozen is None else frozen.metadata()
+            ),
+        )

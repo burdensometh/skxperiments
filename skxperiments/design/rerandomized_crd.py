@@ -8,6 +8,8 @@ long as the same acceptance criterion is applied when generating
 permutations under the null.
 """
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
@@ -29,9 +31,16 @@ class ReRandomizedCRD(BaseDesign):
 
     Parameters
     ----------
-    covariates : list of str
+    covariates : list of str or None, optional
         Names of covariates used to compute the Mahalanobis distance.
-        Must be non-empty, all numeric, and contain no NaN.
+        Must be non-empty unless ``covariate_roles`` is used to select
+        covariates from a frozen point-in-time table at ``randomize``
+        time. All numeric, no NaN. Default None.
+    covariate_roles : str or sequence of str, optional
+        When ``covariates`` is None, the frozen covariate table's
+        covariates carrying any of these roles are used. By default
+        ``("balance",)``. The selected names are frozen in
+        ``rerandomization_metadata`` so the criterion is auditable.
     threshold : float
         Maximum Mahalanobis distance for acceptance. Must be > 0.
         Has the interpretation of a chi-squared quantile with ``k``
@@ -74,13 +83,14 @@ class ReRandomizedCRD(BaseDesign):
 
     def __init__(
         self,
-        covariates: list[str],
-        threshold: float,
+        covariates: list[str] | None = None,
+        threshold: float | None = None,
         n_treated: int | None = None,
         p: float | None = None,
         seed: int | None = None,
         treatment_col: str = "treatment",
         max_attempts: int = 10_000,
+        covariate_roles: str | tuple[str, ...] = "balance",
     ) -> None:
         # n_treated XOR p
         if n_treated is None and p is None:
@@ -94,12 +104,45 @@ class ReRandomizedCRD(BaseDesign):
                 "both were provided."
             )
 
-        if not isinstance(covariates, list) or len(covariates) == 0:
+        if covariates is not None and (
+            not isinstance(covariates, list) or len(covariates) == 0
+        ):
             raise InvalidDesignError(
-                "ReRandomizedCRD requires a non-empty list of covariates."
+                "ReRandomizedCRD requires a non-empty list of covariates "
+                "or None to select them from a frozen covariate table by "
+                "role."
             )
 
-        if not isinstance(threshold, (int, float)) or threshold <= 0:
+        if isinstance(covariate_roles, str):
+            roles = (covariate_roles,)
+        elif isinstance(covariate_roles, (tuple, list)) and len(
+            covariate_roles
+        ) > 0:
+            roles = tuple(covariate_roles)
+        else:
+            raise InvalidDesignError(
+                "covariate_roles must be a role or a non-empty sequence "
+                "of roles."
+            )
+        from skxperiments.covariates.spec import VALID_ROLES
+
+        for role in roles:
+            if role not in VALID_ROLES:
+                raise InvalidDesignError(
+                    f"Unknown covariate role {role!r}. Valid roles: "
+                    f"{list(VALID_ROLES)}."
+                )
+
+        if threshold is None:
+            raise InvalidDesignError(
+                "ReRandomizedCRD requires a threshold (the maximum "
+                "Mahalanobis distance for acceptance)."
+            )
+        if (
+            not isinstance(threshold, (int, float))
+            or isinstance(threshold, bool)
+            or threshold <= 0
+        ):
             raise InvalidDesignError(
                 f"threshold must be > 0, but received {threshold}."
             )
@@ -116,6 +159,7 @@ class ReRandomizedCRD(BaseDesign):
             )
 
         self.covariates = covariates
+        self.covariate_roles = roles
         self.threshold = threshold
         self.n_treated = n_treated
         self.p = p
@@ -123,20 +167,66 @@ class ReRandomizedCRD(BaseDesign):
         self.treatment_col = treatment_col
         self.max_attempts = max_attempts
 
-    def randomize(self, df: pd.DataFrame) -> CRDAssignment:
+    def _resolve_covariates(
+        self, frozen_covariates: Any = None
+    ) -> list[str]:
+        """Return the covariates defining the acceptance criterion.
+
+        Explicit ``covariates`` win. Otherwise the frozen table supplies
+        the covariates carrying ``covariate_roles``; a plain DataFrame
+        cannot be used, because a role-based criterion must be built
+        from point-in-time values.
+        """
+        if self.covariates is not None:
+            return list(self.covariates)
+
+        if frozen_covariates is None:
+            raise InvalidDesignError(
+                "ReRandomizedCRD was declared without explicit covariates, "
+                "so it needs a frozen point-in-time covariate table to "
+                "select the balance covariates. Build one with "
+                "PointInTimeCovariates and pass frozen_covariates= to "
+                "randomize()."
+            )
+        selected = frozen_covariates.role_columns(*self.covariate_roles)
+        if not selected:
+            raise InvalidDesignError(
+                f"The frozen covariate table declares no covariate with "
+                f"role(s) {list(self.covariate_roles)}; the rerandomization "
+                f"criterion would be empty. Declared roles: "
+                f"{ {n: list(r) for n, r in frozen_covariates.roles.items()} }."
+            )
+        return list(selected)
+
+    def randomize(
+        self,
+        df: pd.DataFrame,
+        *,
+        frozen_covariates: Any = None,
+    ) -> CRDAssignment:
         """Perform rerandomization and return a CRDAssignment.
 
         Parameters
         ----------
         df : pd.DataFrame
             DataFrame with experimental units. Must contain all
-            ``covariates`` and must not contain ``treatment_col``.
+            criterion covariates and must not contain ``treatment_col``.
+
+        Other Parameters
+        ----------------
+        frozen_covariates : CovariateFrame or None, optional
+            Frozen point-in-time covariate table. Required when the
+            design was declared without explicit ``covariates`` (the
+            criterion is then selected by role). When supplied, the
+            criterion columns are verified against the frozen values, so
+            a later "latest snapshot" cannot redefine the design.
 
         Returns
         -------
         CRDAssignment
             Assignment whose Mahalanobis distance is at most
-            ``threshold``. ``rerandomization_metadata`` is populated.
+            ``threshold``. ``rerandomization_metadata`` is populated,
+            including the resolved criterion covariates.
 
         Raises
         ------
@@ -147,6 +237,13 @@ class ReRandomizedCRD(BaseDesign):
             When ``len(df) < n_treated``.
         """
         n_total = len(df)
+        covariates = self._resolve_covariates(frozen_covariates)
+
+        if frozen_covariates is not None:
+            # Verify only the criterion columns: the design needs no other
+            # frozen covariate, and a caller may legitimately pass a frame
+            # with just those columns plus outcomes.
+            frozen_covariates.assert_columns_unchanged(df, covariates)
 
         if self.treatment_col in df.columns:
             raise InvalidDesignError(
@@ -155,7 +252,7 @@ class ReRandomizedCRD(BaseDesign):
             )
 
         # Validate covariates exist
-        missing = [c for c in self.covariates if c not in df.columns]
+        missing = [c for c in covariates if c not in df.columns]
         if missing:
             raise InvalidDesignError(
                 f"Covariates not found in DataFrame: {missing}. "
@@ -164,7 +261,7 @@ class ReRandomizedCRD(BaseDesign):
 
         # Validate numeric dtype
         non_numeric = [
-            c for c in self.covariates if not is_numeric_dtype(df[c])
+            c for c in covariates if not is_numeric_dtype(df[c])
         ]
         if non_numeric:
             raise InvalidDesignError(
@@ -172,7 +269,7 @@ class ReRandomizedCRD(BaseDesign):
             )
 
         # Validate no NaN
-        cols_with_nan = [c for c in self.covariates if df[c].isna().any()]
+        cols_with_nan = [c for c in covariates if df[c].isna().any()]
         if cols_with_nan:
             raise InvalidDesignError(
                 f"Covariates contain NaN values: {cols_with_nan}. "
@@ -198,10 +295,10 @@ class ReRandomizedCRD(BaseDesign):
             )
 
         # Compute covariance matrix once (ddof=1)
-        cov_matrix = df[self.covariates].cov(ddof=1).values
+        cov_matrix = df[covariates].cov(ddof=1).values
 
         # Check for singularity
-        k = len(self.covariates)
+        k = len(covariates)
         rank = np.linalg.matrix_rank(cov_matrix)
         if rank < k:
             raise InvalidDesignError(
@@ -215,11 +312,13 @@ class ReRandomizedCRD(BaseDesign):
         # Pre-resolve target n_treated and store on self for the loop
         # to use without recomputation.
         self._resolved_n_treated = n_treated
+        self._resolved_covariates = covariates
 
         return self._randomize_with_cached_cov(
             df=df,
             cov_matrix=cov_matrix,
             rng=rng,
+            frozen_covariates=frozen_covariates,
         )
 
     def _randomize_with_cached_cov(
@@ -227,6 +326,8 @@ class ReRandomizedCRD(BaseDesign):
         df: pd.DataFrame,
         cov_matrix: np.ndarray,
         rng: np.random.Generator,
+        frozen_covariates: Any = None,
+        covariates: list[str] | None = None,
     ) -> CRDAssignment:
         """Acceptance/rejection loop with a pre-computed covariance matrix.
 
@@ -242,6 +343,13 @@ class ReRandomizedCRD(BaseDesign):
             computed once.
         rng : np.random.Generator
             Random generator driving the loop.
+        frozen_covariates : CovariateFrame or None, optional
+            Frozen covariate table carried onto the new assignment.
+        covariates : list of str or None, optional
+            Criterion covariates. ``CRDAssignment.draw`` passes the
+            names recorded in ``rerandomization_metadata`` so a replay
+            cannot silently use a different criterion than the original
+            randomization.
 
         Returns
         -------
@@ -277,7 +385,22 @@ class ReRandomizedCRD(BaseDesign):
                 f"Covariates may be collinear."
             ) from None
 
-        cov_values = df[self.covariates].values
+        if covariates is None:
+            covariates = getattr(self, "_resolved_covariates", None)
+        if covariates is None:
+            if self.covariates is not None:
+                covariates = list(self.covariates)
+            elif frozen_covariates is not None:
+                covariates = frozen_covariates.role_columns(
+                    *self.covariate_roles
+                )
+            else:
+                raise InvalidDesignError(
+                    "ReRandomizedCRD cannot replay the acceptance criterion: "
+                    "no resolved covariates and no frozen covariate table."
+                )
+
+        cov_values = df[covariates].values
 
         for attempt in range(1, self.max_attempts + 1):
             treatment = np.zeros(n_total, dtype=int)
@@ -296,7 +419,7 @@ class ReRandomizedCRD(BaseDesign):
                 df_out[self.treatment_col] = treatment
 
                 metadata = {
-                    "covariates": list(self.covariates),
+                    "covariates": list(covariates),
                     "threshold": float(self.threshold),
                     "cov_matrix": cov_matrix,
                     "attempts": attempt,
@@ -309,6 +432,7 @@ class ReRandomizedCRD(BaseDesign):
                     design=self,
                     seed=self.seed,
                     rerandomization_metadata=metadata,
+                    frozen_covariates=frozen_covariates,
                 )
 
         raise InvalidDesignError(

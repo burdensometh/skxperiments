@@ -40,11 +40,18 @@ class PipelineResult:
         (e.g., ``{"SRMTest": SRMResult, "BalanceReport": BalanceResult}``).
         Diagnostics that could not run are absent here and appear as a
         warning in ``diagnostics`` instead.
+    covariate_metadata : dict or None, optional
+        Frozen point-in-time covariate metadata (roles, windows, fill
+        rules, cutoff/history versions, fingerprint) when the assignment
+        carried a frozen covariate table. This ties the whole run — the
+        design feature, the balance diagnostics, and the adjusted
+        estimate — to one declared snapshot.
     """
 
     results: Results
     diagnostics: DiagnosticsReport
     diagnostic_results: dict
+    covariate_metadata: dict | None = None
 
     @property
     def flagged(self) -> bool:
@@ -145,6 +152,12 @@ class ExperimentPipeline:
             If ``raise_on_flag`` is True and a diagnostic is flagged.
             Errors from the wrapped inference propagate unchanged.
         """
+        frozen = getattr(assignment, "frozen_covariates_", None)
+        if frozen is not None:
+            # Fail before any diagnostic or estimate if the design
+            # feature was altered after randomization.
+            frozen.assert_unchanged(assignment.data_)
+
         combined = DiagnosticsReport()
         diagnostic_results: dict = {}
 
@@ -173,6 +186,9 @@ class ExperimentPipeline:
             results=results,
             diagnostics=combined,
             diagnostic_results=diagnostic_results,
+            covariate_metadata=(
+                None if frozen is None else frozen.metadata()
+            ),
         )
 
 

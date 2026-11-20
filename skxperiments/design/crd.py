@@ -4,6 +4,8 @@ Assigns units to treatment uniformly at random, with either a fixed
 absolute count of treated units or a fixed treatment proportion.
 """
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -84,7 +86,12 @@ class CRD(BaseDesign):
         self.seed = seed
         self.treatment_col = treatment_col
 
-    def randomize(self, df: pd.DataFrame) -> CRDAssignment:
+    def randomize(
+        self,
+        df: pd.DataFrame,
+        *,
+        frozen_covariates: Any = None,
+    ) -> CRDAssignment:
         """Perform complete randomization and return a CRDAssignment.
 
         Parameters
@@ -98,6 +105,15 @@ class CRD(BaseDesign):
         CRDAssignment
             Assignment with the treatment column added. The original
             DataFrame is not modified.
+
+        Other Parameters
+        ----------------
+        frozen_covariates : CovariateFrame or None, optional
+            Frozen point-in-time covariate table carried on the
+            assignment. Its values must already be present in ``df``
+            (``CovariateFrame.attach`` does this) and are verified on
+            construction. Passed by ``CRDAssignment.draw`` so every
+            permutation shares the same design feature.
 
         Raises
         ------
@@ -159,4 +175,5 @@ class CRD(BaseDesign):
             treatment_col=self.treatment_col,
             design=self,
             seed=self.seed,
+            frozen_covariates=frozen_covariates,
         )

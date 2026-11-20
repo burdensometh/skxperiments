@@ -92,6 +92,15 @@ class Results:
       ``Cov(Y, X_pre) / Var(X_pre)``.
     - ``"correlation"`` : float. Pearson correlation between outcome
       and pre-period covariate, written by ``CUPED``.
+    - ``"covariates"`` : list[str]. Covariates actually used by
+      ``LinEstimator`` (resolved at fit time when selected by role from
+      a frozen point-in-time table).
+    - ``"pre_experiment_col"`` : str. Covariate actually used by
+      ``CUPED``, after role resolution.
+    - ``"covariate_metadata"`` : dict. Frozen point-in-time covariate
+      metadata (specs, roles, windows, fill rules, cutoff/history
+      versions, fingerprint), written by ``LinEstimator``/``CUPED`` when
+      the covariate came from a frozen table.
 
     *Written by inference classes (Phase 4):*
 

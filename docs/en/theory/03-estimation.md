@@ -220,6 +220,17 @@ users. The math above explains where that "50%" comes from: it is `1 - ρ²`.
 > v1 accepts only `CRDAssignment`. The covariate **must precede the treatment**
 > (or be unaffected by it); using a covariate contaminated by the treatment
 > introduces bias.
+>
+> **Getting X right.** "Pre-experiment" is a property of the data you feed in,
+> not of the column name. Joining a latest-snapshot table and calling the result
+> `x_pre` does not make it pre-experiment: any behavior after the assignment
+> cutoff breaks the `E(X_T) = E(X_C)` argument above. Build the covariate with
+> `PointInTimeCovariates`, which only admits rows with
+> `event_time <= cutoff` **and** `arrival_time <= cutoff` (so rows written to
+> the warehouse after assignment are excluded), freezes the result, and raises
+> `FrozenCovariateViolation` if the values change later. Pass the frozen table
+> on the assignment (`randomize(..., frozen_covariates=frame)`) and let
+> `CUPED(outcome_col="y")` (or `LinEstimator`) select it by role.
 
 ---
 

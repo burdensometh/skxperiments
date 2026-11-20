@@ -197,6 +197,34 @@ intervals come from inference classes in `skxperiments.inference`.
 
 Each returns a dedicated result with `to_diagnostics_report()` for pipeline aggregation.
 
+### Covariates (`skxperiments.covariates`)
+
+- **`PointInTimeCovariates`**: builds a **frozen** pre-assignment covariate
+  table from an event history, keyed by `unit_col` and a per-unit
+  assignment cutoff. A row is visible at the cutoff only when
+  `event_time <= cutoff` **and** `arrival_time <= cutoff`, so rows that
+  happened before assignment but were written to the warehouse afterwards
+  (what a "latest snapshot" join leaks) are excluded. Eligible rows are
+  aggregated over a declared lookback window relative to each cutoff
+  (`strategy="aggregate"`) or reduced to the last visible value
+  (`strategy="last_visible"`). Units with no eligible history get a
+  declared, frozen fill rule.
+- **`CovariateSpec`**: declarative `name` / `column` / `agg` / `window` /
+  `role` (`balance`, `adjustment`, `blocking`, `descriptive`).
+- **`CovariateFrame`**: the frozen table. `attach(df)` joins by unit id and
+  refuses a same-named column with different values; `fingerprint()` /
+  `assert_unchanged()` detect later changes, so appending post-assignment
+  data or re-joining a newer snapshot raises `FrozenCovariateViolation`
+  instead of silently redefining the design.
+
+The frozen table travels on the `Assignment` (`frozen_covariates_`,
+`covariate_metadata_`) and through every `draw()`. `ReRandomizedCRD`,
+`check_balance`/`BalanceReport`, `LinEstimator`, `CUPED`, the pipeline and
+`AATest` all consume it: designs select the rerandomization criterion by
+role, diagnostics report balance on the declared covariates instead of
+every numeric column, and adjustment estimators read the frozen values and
+reject a column outside the table.
+
 ### Pipeline (`skxperiments.pipeline`)
 
 - **`ExperimentPipeline`**: Composes an inference (with its estimator) and diagnostics,

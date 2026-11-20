@@ -143,3 +143,30 @@ class InvalidDesignError(SkxperimentsError):
 
     def __init__(self, message: str) -> None:
         super().__init__(message)
+
+
+class FrozenCovariateViolation(SkxperimentsError):
+    """Raised when a frozen pre-assignment covariate table changed.
+
+    Frozen covariates are the design feature: rerandomization criteria,
+    balance diagnostics and adjusted estimators consume the values that
+    were knowable at each unit's assignment cutoff. Rebuilding them from
+    a newer history snapshot, or merging a latest table under the same
+    names, would silently replace that design feature with post-assignment
+    data.
+
+    Parameters
+    ----------
+    message : str
+        Description of the violation, including expected and received
+        fingerprints when available.
+
+    Examples
+    --------
+    >>> raise FrozenCovariateViolation(
+    ...     "Frozen covariate table changed after it was built."
+    ... )
+    """
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)

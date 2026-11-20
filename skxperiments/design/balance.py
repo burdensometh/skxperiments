@@ -13,6 +13,7 @@ from skxperiments.core.exceptions import (
     InsufficientDataError,
     InvalidDesignError,
 )
+from skxperiments.covariates.frame import resolve_covariates
 
 
 def check_balance(
@@ -30,10 +31,14 @@ def check_balance(
         Assignment object produced by a design. Must expose ``data_``
         (DataFrame with treatment column attached) and ``treatment_col_``.
     covariates : list of str or None, optional
-        Names of covariates to check. If None, all numeric columns in
-        ``assignment.data_`` except the treatment column are used, in
-        the order they appear in the DataFrame. Boolean columns count
-        as numeric. By default None.
+        Names of covariates to check. If None, the frozen point-in-time
+        covariates carried by the assignment with role ``"balance"`` or
+        ``"adjustment"`` are used. If the assignment has no frozen table,
+        all numeric columns in ``assignment.data_`` except the treatment
+        column are used, in the order they appear in the DataFrame; that
+        fallback can silently include post-assignment columns, so prefer
+        a frozen table for experiments with history. Boolean columns
+        count as numeric. By default None.
 
     Returns
     -------
@@ -97,6 +102,17 @@ def check_balance(
     """
     data = assignment.data_
     treatment_col = assignment.treatment_col_
+    frozen = getattr(assignment, "frozen_covariates_", None)
+
+    # Prefer the assignment's frozen point-in-time covariates: they are
+    # the declared design feature, and auto-selecting every numeric
+    # column would sweep in post-assignment metrics.
+    if frozen is not None:
+        # Resolves None to the declared covariates and validates any
+        # explicit names against the frozen table. Then confirm the
+        # frozen values were not replaced by a later snapshot.
+        covariates = resolve_covariates(assignment, covariates)
+        frozen.assert_unchanged(data)
 
     # Resolve covariate list
     if covariates is None:

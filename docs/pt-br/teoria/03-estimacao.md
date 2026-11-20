@@ -219,6 +219,17 @@ esse "50%": é o `1 - ρ²`.
 > aceita só `CRDAssignment`. A covariável **tem que ser anterior ao tratamento**
 > (ou não afetada por ele); usar uma covariável contaminada pelo tratamento
 > introduz viés.
+>
+> **Construir o X certo.** "Pré-experimento" é propriedade dos dados que você
+> entrega, não do nome da coluna. Fazer join com uma tabela "latest" e chamar o
+> resultado de `x_pre` não o torna pré-experimento: qualquer comportamento depois
+> do cutoff de atribuição quebra o argumento `E(X_T) = E(X_C)` acima. Construa a
+> covariável com `PointInTimeCovariates`, que só admite linhas com
+> `event_time <= cutoff` **e** `arrival_time <= cutoff` (logo, linhas gravadas no
+> warehouse depois da atribuição ficam de fora), congela o resultado e levanta
+> `FrozenCovariateViolation` se os valores mudarem depois. Passe a tabela
+> congelada na atribuição (`randomize(..., frozen_covariates=frame)`) e deixe o
+> `CUPED(outcome_col="y")` (ou `LinEstimator`) selecioná-la por papel.
 
 ---
 

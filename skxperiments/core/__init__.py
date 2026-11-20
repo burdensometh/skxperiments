@@ -10,6 +10,7 @@ This module contains the foundational components of skxperiments:
 
 from skxperiments.core.exceptions import (
     DesignEstimatorMismatch,
+    FrozenCovariateViolation,
     InsufficientDataError,
     InvalidDesignError,
     NotFittedError,
@@ -31,6 +32,7 @@ __all__ = [
     "NotFittedError",
     "InsufficientDataError",
     "InvalidDesignError",
+    "FrozenCovariateViolation",
     "PotentialOutcomes",
     "BaseAssignment",
     "CRDAssignment",

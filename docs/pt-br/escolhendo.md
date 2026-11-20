@@ -23,6 +23,35 @@ diagnósticos. Na dúvida, comece pelo mais simples (`CRD` +
 | Blocado | `BlockedDifferenceInMeans` |
 | Fatorial | `FactorialEstimator` |
 
+Covariáveis para `ReRandomizedCRD`, `LinEstimator` e `CUPED` precisam ser
+conhecidas **antes** da atribuição. Não faça join com uma tabela "latest"
+na hora da análise: construa uma tabela congelada com
+`PointInTimeCovariates` e passe adiante:
+
+```python
+from skxperiments.covariates import CovariateSpec, PointInTimeCovariates
+
+frame = PointInTimeCovariates(
+    unit_col="unit_id",
+    event_time_col="event_at",
+    arrival_time_col="arrived_at",   # o que era visível no cutoff
+    cutoff_col="assigned_at",
+    specs=[CovariateSpec("spend_7d", column="spend", agg="sum",
+                         role=["balance", "adjustment"])],
+    window="7D",
+    fillna=0.0,
+).build(units, history)
+
+df = frame.attach(units)                 # join pelos valores congelados
+assignment = ReRandomizedCRD(threshold=..., p=0.5).randomize(
+    df, frozen_covariates=frame
+)
+```
+
+Os estimadores então selecionam a covariável por papel
+(`LinEstimator(outcome_col="y")`, `CUPED(outcome_col="y")`) e a
+fingerprint congelada vai junto para os resultados.
+
 ## 3. Qual inferência?
 
 | Quero... | Use |

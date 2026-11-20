@@ -4,6 +4,8 @@ Randomly assigns units to one of 2^K cells defined by the values of
 K binary factors, with all cells of equal size.
 """
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 
@@ -87,7 +89,12 @@ class FactorialDesign(BaseDesign):
         self.n_per_cell = n_per_cell
         self.seed = seed
 
-    def randomize(self, df: pd.DataFrame) -> FactorialAssignment:
+    def randomize(
+        self,
+        df: pd.DataFrame,
+        *,
+        frozen_covariates: Any = None,
+    ) -> FactorialAssignment:
         """Perform factorial randomization.
 
         Parameters
@@ -96,6 +103,12 @@ class FactorialDesign(BaseDesign):
             DataFrame with experimental units. Must have exactly
             ``n_per_cell * 2^K`` rows and must not contain any column
             named in ``factors`` or named ``"_cell"``.
+
+        Other Parameters
+        ----------------
+        frozen_covariates : CovariateFrame or None, optional
+            Frozen point-in-time covariate table carried on the
+            assignment and verified against ``df``.
 
         Returns
         -------
@@ -171,4 +184,5 @@ class FactorialDesign(BaseDesign):
             factor_cols=self.factors,
             cell_sizes=cell_sizes,
             seed=self.seed,
+            frozen_covariates=frozen_covariates,
         )

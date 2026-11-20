@@ -18,6 +18,7 @@ small ``n_simulations`` (and expect a slow run).
 """
 
 from dataclasses import dataclass
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -148,6 +149,12 @@ class AATest:
         falls below it.
     seed : int or None, optional
         Random seed for reproducibility, by default None.
+    frozen_covariates : CovariateFrame or None, optional
+        Frozen point-in-time covariate table passed to every
+        ``design.randomize`` call. Required when the design selects its
+        covariates by role (e.g. ``ReRandomizedCRD(covariates=None)``),
+        so each simulated randomization uses the same design feature.
+        By default None.
 
     Notes
     -----
@@ -166,6 +173,7 @@ class AATest:
         alpha: float = 0.05,
         meta_threshold: float = 0.001,
         seed: int | None = None,
+        frozen_covariates: Any = None,
     ) -> None:
         if not isinstance(design, BaseDesign):
             raise InvalidDesignError(
@@ -207,6 +215,7 @@ class AATest:
         self.alpha = alpha
         self.meta_threshold = meta_threshold
         self.seed = seed
+        self.frozen_covariates = frozen_covariates
 
     def run(self, df: pd.DataFrame) -> AAResult:
         """Run the A/A test on a fixed DataFrame.
@@ -226,7 +235,9 @@ class AATest:
         InvalidDesignError
             If the wrapped inference does not produce a scalar p-value.
         """
-        base = self.design.randomize(df)
+        base = self.design.randomize(
+            df, frozen_covariates=self.frozen_covariates
+        )
 
         rng = np.random.default_rng(self.seed)
         sim_seeds = rng.integers(0, 2**32, size=self.n_simulations)
